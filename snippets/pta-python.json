@@ -1,0 +1,29 @@
+{
+  "PTA note block": {
+    "prefix": "ptanote",
+    "body": [
+      "# @pintia note=start",
+      "#",
+      "# @pintia note=end"
+    ],
+    "description": "插入 PTA 笔记块（会随代码一起提交到 PTA）"
+  },
+  "PTA test block": {
+    "prefix": "ptatest",
+    "body": [
+      "# @pintia test=start",
+      "",
+      "# @pintia test=end"
+    ],
+    "description": "插入自定义测试数据块，可用「PTA: 在线测试」运行"
+  },
+  "PTA code block": {
+    "prefix": "ptacode",
+    "body": [
+      "# @pintia code=start",
+      "",
+      "# @pintia code=end"
+    ],
+    "description": "只提交这一段代码（不写则提交整个文件）"
+  }
+}

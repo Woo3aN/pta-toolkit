@@ -1,0 +1,15 @@
+*.vsix
+node_modules/
+
+# 诊断输出（可能含你自己的题集结构）
+_pta-diagnose/
+
+# 本地跑样例的编译产物
+.pta-build/
+
+# 搜索索引缓存（可重新生成）
+.pta-search-index.json
+
+.vscode/*
+!.vscode/launch.json
+!.vscode/extensions.json

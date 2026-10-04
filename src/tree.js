@@ -1,0 +1,286 @@
+"use strict";
+
+/**
+ * 侧边栏的题目集树 —— 相当于把 https://pintia.cn/problem-sets/active 搬进 VS Code。
+ *
+ *   我的题集  →  题集  →  题目（带做题状态图标，点击打开题面）
+ *   收藏夹    →  题目
+ *   公开题集  →  题集  →  题目
+ *
+ * 题目列表是按需加载的（展开题集时才请求），并在一次会话内缓存；
+ * 本地已有的题目会直接显示状态与「已下载」标记。
+ */
+
+const vscode = require("vscode");
+const path = require("path");
+
+const api = require("./ptaApi");
+const library = require("./library");
+const treeModel = require("./treeModel");
+const ws = require("./problemWorkspace");
+
+const GROUP_MINE = "mine";
+const GROUP_FAVORITES = "favorites";
+const GROUP_PUBLIC = "public";
+
+function messageItem(text, icon) {
+  const item = new vscode.TreeItem(text, vscode.TreeItemCollapsibleState.None);
+  item.kind = "message";
+  item.contextValue = "pta.message";
+  item.iconPath = new vscode.ThemeIcon(icon || "info");
+  return item;
+}
+
+function groupItem(group, label, icon, tooltip) {
+  const item = new vscode.TreeItem(label, vscode.TreeItemCollapsibleState.Expanded);
+  item.kind = "group";
+  item.group = group;
+  item.contextValue = "pta.group";
+  item.iconPath = new vscode.ThemeIcon(icon);
+  item.tooltip = tooltip;
+  return item;
+}
+
+function themeColorOrUndefined(status) {
+  const id = treeModel.problemThemeColorId(status);
+  return id ? new vscode.ThemeColor(id) : undefined;
+}
+
+class PtaTreeDataProvider {
+  constructor(options) {
+    const opts = options || {};
+    this.getCookie = opts.getCookie || (async () => "");
+    this.getWorkspaceRoot = opts.getWorkspaceRoot || (async () => "");
+    this.log = opts.log || (() => {});
+    this.emitter = new vscode.EventEmitter();
+    this.onDidChangeTreeData = this.emitter.event;
+    this.problemCache = new Map();
+  }
+
+  refresh() {
+    this.problemCache.clear();
+    this.emitter.fire();
+  }
+
+  getTreeItem(element) {
+    return element;
+  }
+
+  async getChildren(element) {
+    try {
+      if (!element) {
+        return this.rootGroups();
+      }
+      if (element.kind === "group") {
+        return await this.groupChildren(element.group);
+      }
+      if (element.kind === "set") {
+        return await this.setChildren(element);
+      }
+      return [];
+    } catch (error) {
+      this.log(`侧边栏加载失败：${error && error.message ? error.message : error}`);
+      if (api.isAuthError(error)) {
+        return [messageItem("登录已失效，请点标题栏的登录按钮重新登录", "warning")];
+      }
+      return [messageItem(`加载失败：${error && error.message ? error.message : error}`, "error")];
+    }
+  }
+
+  rootGroups() {
+    return [
+      groupItem(GROUP_MINE, "我的题集", "account", "你已加入的题目集（含老师布置的）"),
+      groupItem(GROUP_FAVORITES, "收藏夹", "star", "本地收藏的题目"),
+      groupItem(GROUP_PUBLIC, "公开题集", "library", "无需登录即可浏览的题目集")
+    ];
+  }
+
+  async groupChildren(group) {
+    if (group === GROUP_FAVORITES) {
+      return this.favoriteChildren();
+    }
+    const cookie = await this.getCookie();
+    if (!cookie) {
+      return [messageItem("登录后即可浏览，点标题栏的登录按钮", "account")];
+    }
+    if (group === GROUP_PUBLIC) {
+      return this.publicChildren();
+    }
+    return this.mineChildren(cookie);
+  }
+
+  async mineChildren(cookie) {
+    const active = await api.getMyProblemSets(cookie, { onlyActive: true });
+    const all = await api.getMyProblemSets(cookie, { onlyActive: false });
+    const map = new Map();
+    all.forEach((item) => map.set(item.id, item));
+    active.forEach((item) => map.set(item.id, item));
+    const list = Array.from(map.values());
+    if (!list.length) {
+      return [messageItem("没有读到你的题集", "info")];
+    }
+    return list.map((item) => this.setItem(item, {}));
+  }
+
+  async publicChildren() {
+    const list = await api.getAlwaysAvailableProblemSets();
+    if (!list.length) {
+      return [messageItem("没有读到公开题集", "info")];
+    }
+    return list.map((item) => this.setItem(item, { isPublic: true }));
+  }
+
+  async favoriteChildren() {
+    const root = await this.getWorkspaceRoot();
+    const items = await library.listFavorites(root);
+    if (!items.length) {
+      return [messageItem("收藏夹是空的（题目上右键可以收藏）", "star")];
+    }
+    return items.map((item) => {
+      const problem = {
+        id: item.problemId,
+        label: item.label,
+        title: item.title,
+        type: item.problemType,
+        score: item.score
+      };
+      return this.problemItem(problem, {
+        problemSetId: item.problemSetId,
+        problemSetName: item.problemSetName,
+        isFavorite: true
+      });
+    });
+  }
+
+  setItem(problemSet, extra) {
+    const opts = extra || {};
+    const item = new vscode.TreeItem(
+      problemSet.name || problemSet.id,
+      vscode.TreeItemCollapsibleState.Collapsed
+    );
+    item.kind = "set";
+    item.contextValue = opts.isPublic ? "pta.set.public" : "pta.set";
+    item.setRef = {
+      problemSetId: String(problemSet.id),
+      problemSetName: problemSet.name || ""
+    };
+    item.description = treeModel.problemSetDescription(problemSet);
+    item.iconPath = new vscode.ThemeIcon(treeModel.problemSetIconId(Object.assign({}, problemSet, opts)));
+    const tooltip = [`**${problemSet.name || problemSet.id}**`, `题集 ID：${problemSet.id}`];
+    if (problemSet.organizationName) {
+      tooltip.push(`来源：${problemSet.organizationName}`);
+    }
+    if (problemSet.endAt) {
+      tooltip.push(treeModel.formatDeadline(problemSet.endAt));
+    }
+    tooltip.push("", "展开可看题目；右键可以把整个题集拉到本地");
+    item.tooltip = tooltip.join("\n\n");
+    return item;
+  }
+
+  problemItem(problem, options) {
+    const opts = options || {};
+    const item = new vscode.TreeItem(
+      treeModel.problemNodeLabel(problem),
+      vscode.TreeItemCollapsibleState.None
+    );
+    item.kind = "problem";
+    item.contextValue = opts.isFavorite ? "pta.problem.favorite" : "pta.problem";
+    item.ref = {
+      problemSetId: String(opts.problemSetId),
+      problemSetName: opts.problemSetName || "",
+      problemId: String(problem.id || problem.problemId),
+      label: problem.label || "",
+      title: problem.title || "",
+      problemType: problem.type || "PROGRAMMING",
+      score: problem.score === undefined ? null : problem.score
+    };
+    item.description = treeModel.problemNodeDescription(problem, opts.status);
+    item.iconPath = new vscode.ThemeIcon(
+      treeModel.problemIconId(opts.status),
+      themeColorOrUndefined(opts.status)
+    );
+    item.tooltip = new vscode.MarkdownString(
+      treeModel.problemTooltipLines(problem, {
+        problemSetName: opts.problemSetName,
+        status: opts.status,
+        local: opts.local
+      })
+    );
+    item.command = {
+      command: "pta.previewProblem",
+      title: "预览题目",
+      arguments: [item.ref]
+    };
+    return item;
+  }
+
+  /** 读本地 .pta.json，拿到每道题的做题状态与「是否已下载」 */
+  async localState(problemSetId) {
+    const state = { statusById: new Map(), localIds: new Set(), favorites: new Set() };
+    const root = await this.getWorkspaceRoot();
+    if (!root) {
+      return state;
+    }
+    const setDir = await library.findLocalProblemSetDir(root, problemSetId);
+    if (setDir) {
+      const entries = await ws.readProblemSetEntries(setDir);
+      for (const entry of entries) {
+        const id = String(entry.metadata.problemId);
+        state.localIds.add(id);
+        if (entry.metadata.problemStatus) {
+          state.statusById.set(id, entry.metadata.problemStatus);
+        }
+      }
+    }
+    const favorites = await library.listFavorites(root);
+    favorites.forEach((item) => state.favorites.add(`${item.problemSetId}:${item.problemId}`));
+    return state;
+  }
+
+  async setChildren(element) {
+    const cookie = await this.getCookie();
+    if (!cookie) {
+      return [messageItem("登录后才能展开题集内容", "account")];
+    }
+    const problemSetId = element.setRef.problemSetId;
+    const problemSetName = element.setRef.problemSetName;
+
+    let problems = this.problemCache.get(problemSetId);
+    if (!problems) {
+      const summaries = await api.getProblemSummary(problemSetId, cookie);
+      const types = Object.keys(summaries).filter((type) => api.SAMPLE_BEARING_TYPES.indexOf(type) >= 0);
+      if (!types.length) {
+        return [messageItem("这个题集里没有可导出的编程题", "info")];
+      }
+      problems = [];
+      for (const type of types) {
+        const list = await api.getAllProblems(problemSetId, type, cookie, { interval: 0 });
+        problems = problems.concat(list);
+      }
+      this.problemCache.set(problemSetId, problems);
+    }
+    if (!problems.length) {
+      return [messageItem("这个题集没有读到题目", "info")];
+    }
+
+    const state = await this.localState(problemSetId);
+    return problems.map((problem) =>
+      this.problemItem(problem, {
+        problemSetId,
+        problemSetName,
+        status: state.statusById.get(String(problem.id)),
+        local: state.localIds.has(String(problem.id)),
+        isFavorite: state.favorites.has(`${problemSetId}:${problem.id}`)
+      })
+    );
+  }
+}
+
+module.exports = {
+  PtaTreeDataProvider,
+  GROUP_MINE,
+  GROUP_FAVORITES,
+  GROUP_PUBLIC,
+  VIEW_ID: "pta.problemSets"
+};

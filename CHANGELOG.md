@@ -1,0 +1,95 @@
+# 变更记录
+
+本项目的所有重要变更都会记录在此文件。
+
+格式基于 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)，
+版本号遵循[语义化版本](https://semver.org/lang/zh-CN/)。
+
+## [Unreleased]
+
+## [0.1.0] - 2026-10-04
+
+首个版本，可日常使用。
+
+### 新增
+
+- **题目预览面板**：点侧边栏的题目，在编辑器旁打开渲染好的题面（Markdown 标题 / 表格 /
+  围栏代码块 / `$…$` 与 `$$…$$` 公式、图片、引用），带题目信息徽章与操作按钮。
+  主按钮随本地状态在「创建代码」和「打开代码」之间切换；面板顶部显示当前题解目录，
+  未设置时可直接点「更改」。题面优先读本地 `problem.md`，没有才请求 PTA。
+- **拉取题集到本地**：支持「我的题集」（含老师布置的）、公开题集，以及直接粘贴题目链接。
+  每题一个文件夹，结构与 XMUOJ 插件保持一致。
+- **本地文件生成**
+  - `problem.md`：题面（含输入 / 输出格式、样例、时限、内存、在线地址）
+  - `samples/{n}.in` / `{n}.out`：样例输入输出
+  - `.pta.json`：元数据（题目 ID / 语言 / 源文件名 / 时限 / 链接 / 做题状态）
+  - 源码文件：C / C++ / Python / Java 四种内置最小模板，也支持用 `pta.templateDir` 指定自己的模板
+  - `notes.md`：Obsidian 友好的笔记骨架（YAML frontmatter）
+  - `index.md`：题集索引，含题号 / 标题 / 类型 / 分值 / 做题状态 / 本地链接
+- **不覆盖规则**：`problem.md` 与 `samples/` 每次刷新重写；
+  **源码文件与 `notes.md` 只在缺失时创建，永不覆盖**；`index.md` 中「我的备注」一节刷新时保留。
+- **侧边栏**：活动栏「PTA」视图（我的题集 / 收藏夹 / 公开题集 → 题集 → 题目），
+  题目列表按需加载并缓存，题目带 AC / WA 状态图标（跟随主题配色），
+  右键可拉取 / 收藏 / 查看提交记录 / 在浏览器打开。
+- **登录**
+  - 微信扫码登录：在 VS Code 里画出二维码，扫码后扩展自动调 TokenLogin 换回 Cookie
+  - 粘贴 Cookie 登录：从浏览器复制 `PTASession` 即可，接受裸值或整条 Cookie
+  - Cookie 存在 VS Code SecretStorage（加密存储），不写配置文件、不进 Git
+- **笔记**
+  - 兼容 pintia 插件的 `@pintia note` / `@pintia test` / `@pintia code` 三种注释块
+  - 命令「把源码里的笔记同步到 notes.md」，同步区用 marker 隔离，不影响手写内容
+  - 代码片段：输入 `ptanote` / `ptatest` / `ptacode` 快速插入
+- **本地跑样例**：编译 + 用样例输入运行 + 逐样例对比输出，结果写进输出通道。
+  受 `pta.enableLocalTest` 开关控制（默认关），开启时同时写 `.vscode/tasks.json` 任务。
+- **提交与测试**
+  - 提交到 PTA 并每秒轮询判题结果，状态翻译成中文，逐测试点显示耗时 / 内存 / 得分
+  - 在线测试：用自定义测试数据（本地样例 / `@pintia test` 块 / 手输 / 选文件）在 PTA 上跑一次，不计成绩
+  - 查看这道题的最近一次提交
+  - 查看这道题的提交记录：时间倒序列出最近若干条（状态 / 得分 / 耗时 / 内存 / 编译器），
+    选一条看详情。接口 `GET /api/problem-sets/{psID}/submissions`，游标分页
+    （`before` + `hasBefore`）；PTA 会忽略按题过滤的参数，所以是在本地筛的
+- **检索与状态**
+  - 收藏夹（`.pta-favorites.json`，写在题解工作区里，跟着 Git 走）
+  - 跨题集搜索：首次建立索引后可输入关键词过滤，可中断、可重建
+  - 做题状态：`PTA: 刷新题集的做题状态` 一次请求更新整个题集，
+    写回各题 `.pta.json` 并重建索引；`index.md` 增加「状态」列（AC / WA / -）
+  - `PTA: 每日签到`
+- **交互与其他**
+  - 源码顶部 CodeLens：提交 / 在线测试 / 跑本地样例 / 同步笔记 / 打开题面
+  - 状态栏显示登录状态，点击直接进「我的题集」
+  - `PTA: 诊断（导出原始 JSON）`：接口疑似变更时导出原始响应便于排查
+
+### 修复
+
+开发期间实测发现并修掉的问题（首个发布版本已不含这些缺陷）：
+
+- **含空格的路径会让 `.vscode/tasks.json` 的任务失败**。任务是以 `type: "shell"` +
+  整条命令字符串交给 shell 执行的，而命令里的路径原先没加引号，于是
+  `…/练习2-1-Programming in C is fun!/main.cpp` 会在空格处被拆断，报
+  `fatal error: fun!/main.cpp: No such file or directory`。
+  PTA 上英文标题带空格很常见，属于高频问题。现在由 `src/compilers.js` 的
+  `shellQuote` / `joinCommand` 统一处理：只含安全字符的参数保持原样，
+  含空格或 shell 元字符（`& | $ \` ( )` 等）的加双引号；
+  `spawn` 直传的 `args` 数组**不加**引号，两条路径互不污染。
+- **提交记录的耗时 / 内存单位换算错了**。PTA 提交记录里的 `time` 是**秒**、
+  `memory` 是**字节**，而题目里的 `timeLimit` / `memoryLimit` 才是毫秒 / KB。
+  早期实现直接按 ms / KB 显示，数字会差 1000 倍。现统一由 `src/submit.js` 的
+  `formatTime` / `formatMemory` 换算。
+- **Windows 保留设备名未处理**：`CON` / `PRN` / `AUX` / `NUL` / `COM1-9` / `LPT1-9`
+  （含 `CON.txt` 这类带扩展名的形式）会让建目录直接失败。现在会补一个 `_`。
+  默认的 `{label}-{title}` 格式带题号前缀不会触发，属于兜底。
+- **401 没被当成登录失效**：题集无权限时 PTA 返回 406，而做题状态、签到、
+  提交历史这些需要登录的接口返回 401。早期只处理了 406，导致 401 被报成普通 HTTP 错误。
+- **`@pintia note` 块里的注释前缀没剥掉**，同步进笔记时会带上 ` * `。
+- **预览面板的题面标题重复**：面板顶部已显示标题，题面文件开头的同名 h1 会被剥掉；
+  段落中间的 `$$…$$` 按行内渲染，避免块级公式把段落切断。
+
+### 安全
+
+- 登录凭证只存在 VS Code 的 SecretStorage（系统加密存储）中，
+  不写入 `settings.json`、不写入工作区文件、不进 Git。
+- 预览面板渲染题面时先整体转义再还原受控元素，题面里的 HTML 不会被执行；
+  Webview 的 CSP 只放行 `https:` 图片与 CDN 上的 MathJax。
+
+[Unreleased]: https://github.com/Woo3aN/pta-toolkit/compare/v0.1.0...HEAD
+[0.1.0]: https://github.com/Woo3aN/pta-toolkit/releases/tag/v0.1.0
