@@ -13,6 +13,7 @@ const runner = require("./src/runner");
 const submit = require("./src/submit");
 const submissions = require("./src/submissions");
 const templates = require("./src/templates");
+const taskFile = require("./src/taskFile");
 const { PtaCodeLensProvider } = require("./src/codeLens");
 const { WechatLoginPanel } = require("./src/loginPanel");
 const { ProblemPanel, buildPanelHtml, renderPanelSkeleton } = require("./src/problemPanel");
@@ -205,19 +206,35 @@ async function getWorkspaceRoot(options) {
 /* 生成一道题                                                          */
 /* ------------------------------------------------------------------ */
 
+/**
+ * shell 任务的 options。
+ *
+ * `type: "shell"` 且不指定 shell 时，VS Code 用的是默认终端 profile。
+ * Windows 上默认是 Windows PowerShell（本机没装 PS 7 就是 5.1），而命令里
+ * 用到的 `&&` 和输入重定向 `<` 在 PowerShell 5.1 里都不是合法语法，
+ * 任务会直接报「标记"&&"不是此版本中的有效语句分隔符」。
+ * 所以 Windows 上显式钉成 cmd.exe，和 xmuoj 插件的做法、以及
+ * `.vscode-cpp-template` 里的任务保持一致；其它平台沿用默认 shell。
+ */
+function shellTaskOptions() {
+  const options = { cwd: "${workspaceFolder}" };
+  if (process.platform === "win32") {
+    options.shell = { executable: "cmd.exe", args: ["/d", "/c"] };
+  }
+  return options;
+}
+
+/** 合并 tasks.json 失败时只提醒一次，免得一口气拉 100 道题弹 100 个框。 */
+let tasksWriteWarningShown = false;
+
 async function writeTasksForProblem(root, problemDir, metadata, settings) {
   const vscodeDir = path.join(root, ".vscode");
   const tasksPath = path.join(vscodeDir, "tasks.json");
   await fs.promises.mkdir(vscodeDir, { recursive: true });
 
-  let tasksJson = { version: "2.0.0", tasks: [] };
-  try {
-    const parsed = JSON.parse(await fs.promises.readFile(tasksPath, "utf8"));
-    tasksJson.version = parsed.version || "2.0.0";
-    tasksJson.tasks = Array.isArray(parsed.tasks) ? parsed.tasks : [];
-  } catch (_error) {
-    /* 没有就新建 */
-  }
+  // 任务把可执行产物写到 <题目目录>/.pta-build/，而 g++ 不会自己建目录。
+  // 缺了它，只会回一句难懂的 "No such file or directory"。
+  await fs.promises.mkdir(path.join(problemDir, runner.BUILD_DIR_NAME), { recursive: true });
 
   const relativeDir = path.relative(root, problemDir).split(path.sep).join("/");
   const commands = runner.buildTaskCommands({
@@ -227,24 +244,42 @@ async function writeTasksForProblem(root, problemDir, metadata, settings) {
     pythonPath: settings.pythonPath
   });
   const key = `${metadata.label || metadata.problemId}-${metadata.language}`;
-  tasksJson.tasks = tasksJson.tasks.filter((task) => !String(task.label || "").includes(key));
-  tasksJson.tasks.push(
-    {
-      label: `PTA Build ${key}`,
-      type: "shell",
-      command: commands.build,
-      options: { cwd: "${workspaceFolder}" },
-      problemMatcher: []
-    },
-    {
-      label: `PTA Run Sample ${key}`,
-      type: "shell",
-      command: commands.run,
-      options: { cwd: "${workspaceFolder}" },
-      problemMatcher: []
-    }
+
+  const outcome = await taskFile.mergeTasksFile(
+    tasksPath,
+    [
+      {
+        label: `PTA Build ${key}`,
+        type: "shell",
+        command: commands.build,
+        options: shellTaskOptions(),
+        problemMatcher: []
+      },
+      {
+        label: `PTA Run Sample ${key}`,
+        type: "shell",
+        command: commands.run,
+        options: shellTaskOptions(),
+        problemMatcher: []
+      }
+    ],
+    { replaceKeys: [key] }
   );
-  await fs.promises.writeFile(tasksPath, `${JSON.stringify(tasksJson, null, 2)}\n`, "utf8");
+
+  if (!outcome.ok) {
+    // 常见原因是 tasks.json 里有注释（VS Code 允许）。这种情况绝不能当成
+    // 「文件不存在」去新建 —— 那会把用户已有的任务整份清掉，所以这里只跳过。
+    log(`没有写入 ${tasksPath}：${outcome.reason}`);
+    if (!tasksWriteWarningShown) {
+      tasksWriteWarningShown = true;
+      vscode.window.showWarningMessage(
+        `没把 PTA 任务写进 .vscode/tasks.json：${outcome.reason}。` +
+          "你原有的任务没有被改动；修好这个文件的写法后重新拉取即可。"
+      );
+    }
+    return null;
+  }
+
   return tasksPath;
 }
 

@@ -2,7 +2,7 @@
 
 [![VS Code](https://img.shields.io/badge/VS%20Code-%5E1.88.0-007ACC?logo=visualstudiocode&logoColor=white)](https://code.visualstudio.com/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
-[![Version](https://img.shields.io/badge/version-0.1.0-blue.svg)](CHANGELOG.md)
+[![Version](https://img.shields.io/badge/version-0.1.1-blue.svg)](CHANGELOG.md)
 [![Dependencies](https://img.shields.io/badge/dependencies-0-brightgreen.svg)](#实现说明)
 
 > 把拼题A（PTA / pintia.cn）的题目拉进 VS Code：**每题一个文件夹**，
@@ -67,7 +67,7 @@
 ## 安装
 
 ```bash
-code --install-extension pta-notebook-0.1.0.vsix
+code --install-extension pta-toolkit-0.1.1.vsix
 ```
 
 也可以在 VS Code 扩展面板右上角 `...` → 从 VSIX 安装。
@@ -381,6 +381,12 @@ PTA 随时可能改接口。所有端点都集中在 `src/ptaApi.js`，真出问
   `g++ -DONLINE_JUDGE -fno-tree-ch -O2 -Wall -std=c++17 -pipe $src -lm -o $exe`。
   `-DONLINE_JUDGE` 会改变很多竞赛模板的行为，漏掉就会出现「本地过、提交挂」。
   写进 `.vscode/tasks.json` 的命令会按需给路径加引号 —— 标题里的空格会让 shell 拆断参数。
+  Windows 上这两个任务会显式指定 `cmd.exe`：`type: "shell"` 的默认 shell 是终端 profile，
+  默认的 Windows PowerShell 不认 `&&` 和输入重定向 `<`，任务会直接报语法错。
+  写任务时还会顺手建好 `.pta-build/`（g++ 不会自己建目录）。
+  合并 tasks.json 的活由 `src/taskFile.js` 干：**解析不了就整个跳过，绝不新建覆盖**
+  —— 这个文件里可以写注释，早先那一版会把「有注释」误判成「文件不存在」，
+  把用户已有的任务清掉。
 - **索引从磁盘生成**：`index.md` 由各题 `.pta.json` 汇总而来，永远与本地实际文件一致。
 - **单位别猜**：PTA 提交记录里的 `time` 是**秒**、`memory` 是**字节**，
   题目里的 `timeLimit` / `memoryLimit` 才是**毫秒 / KB**。
@@ -394,15 +400,15 @@ PTA 随时可能改接口。所有端点都集中在 `src/ptaApi.js`，真出问
 # 调试：VS Code 打开本目录，按 F5（无需编译）
 # 打包并安装
 python tools/build-vsix.py
-code --install-extension pta-notebook-0.1.0.vsix --force
+code --install-extension pta-toolkit-0.1.1.vsix --force
 ```
 
 测试：
 
 ```bash
-node test/offline.js             # 离线 251 项：目录命名、不覆盖规则、笔记同步、编译器命令、
+node test/offline.js             # 离线 265 项：目录命名、不覆盖规则、笔记同步、编译器命令、
                                  #   真跑样例、二维码、Set-Cookie、收藏夹、做题状态、侧边栏节点、
-                                 #   提交报告、Markdown 渲染、预览面板 HTML
+                                 #   提交报告、Markdown 渲染、预览面板 HTML、tasks.json 合并
 node test/e2e-panel.js 12 2      # 实网：用真实题面渲染预览面板
 node test/e2e-auth.js            # 实网：登录链路的端点契约与错误语义（无需账号）
 node test/e2e-public.js 12       # 实网：题面与样例确实能拉到（无需登录）

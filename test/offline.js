@@ -18,6 +18,7 @@ const api = require("../src/ptaApi");
 const library = require("../src/library");
 const markdown = require("../src/markdown");
 const problemPanel = require("../src/problemPanel");
+const taskFile = require("../src/taskFile");
 
 let failed = 0;
 
@@ -790,6 +791,102 @@ async function main() {
     "面板命令都能在 extension.js 里找到处理分支",
     problemPanel.PANEL_COMMANDS.every((command) =>
       new RegExp(`case "${command}"`).test(require("fs").readFileSync(require("path").join(__dirname, "..", "extension.js"), "utf8"))
+    )
+  );
+
+  console.log("\n25) .vscode/tasks.json 的合并（防覆盖回归）");
+  // 背景：以前这里用一句 try { JSON.parse } catch { /* 没有就新建 */ }，
+  // 于是 tasks.json 里只要出现注释（VS Code 允许）就会被当成「文件不存在」，
+  // 用户已有的任务被整份清掉。下面这几条守着这个行为。
+  const existingTasksText = `${JSON.stringify(
+    {
+      version: "2.0.0",
+      tasks: [{ label: "我的编译任务", type: "shell", command: "g++ x.cpp" }]
+    },
+    null,
+    4
+  )}\n`;
+
+  const mergedTasks = taskFile.mergeTasks(
+    existingTasksText,
+    [{ label: "PTA Build 练习2-1-C++", type: "shell", command: "g++ main.cpp" }],
+    { replaceKeys: ["练习2-1-C++"] }
+  );
+  const mergedTasksJson = JSON.parse(mergedTasks.text);
+  check(
+    "合并后原有任务还在",
+    mergedTasksJson.tasks.some((task) => task.label === "我的编译任务"),
+    mergedTasksJson.tasks.map((task) => task.label)
+  );
+  check(
+    "合并后新任务写进去了",
+    mergedTasksJson.tasks.some((task) => task.label === "PTA Build 练习2-1-C++")
+  );
+  check("沿用原文件的 4 空格缩进", mergedTasks.text.indexOf('\n    "') >= 0, mergedTasks.text.slice(0, 30));
+  check("末尾保留换行", mergedTasks.text.endsWith("\n"));
+
+  const remerged = taskFile.mergeTasks(mergedTasks.text, [{ label: "PTA Build 练习2-1-C++" }], {
+    replaceKeys: ["练习2-1-C++"]
+  });
+  check(
+    "重复合并不会堆叠同一个任务",
+    JSON.parse(remerged.text).tasks.filter((task) => task.label === "PTA Build 练习2-1-C++").length === 1,
+    remerged.text
+  );
+  check(
+    "保留 inputs 等其它顶层键",
+    (() => {
+      const kept = JSON.parse(
+        taskFile.mergeTasks('{"version":"2.0.0","tasks":[],"inputs":[{"id":"pickFile"}]}', [{ label: "y" }]).text
+      );
+      return kept.inputs && kept.inputs[0].id === "pickFile";
+    })()
+  );
+  check("文件不存在时用空骨架新建", JSON.parse(taskFile.mergeTasks(null, [{ label: "x" }]).text).tasks.length === 1);
+
+  const commentJson = '{\n  // VS Code 的 tasks.json 支持注释\n  "version": "2.0.0",\n  "tasks": []\n}';
+  check(
+    "带注释的 tasks.json 会抛错（而不是返回空骨架）",
+    (() => {
+      try {
+        taskFile.mergeTasks(commentJson, [{ label: "x" }]);
+        return false;
+      } catch (_error) {
+        return true;
+      }
+    })()
+  );
+  check(
+    "顶层不是对象也会抛错",
+    (() => {
+      try {
+        taskFile.mergeTasks("[1, 2]", [{ label: "x" }]);
+        return false;
+      } catch (_error) {
+        return true;
+      }
+    })()
+  );
+
+  // 真的落盘跑一遍：合并失败时磁盘上的文件必须一字未改
+  const guardedDir = path.join(root, "tasks-guard");
+  fs.mkdirSync(guardedDir, { recursive: true });
+  const guardedPath = path.join(guardedDir, "tasks.json");
+  fs.writeFileSync(guardedPath, commentJson, "utf8");
+  const guarded = await taskFile.mergeTasksFile(guardedPath, [{ label: "x" }]);
+  check("合并失败时明确返回失败", guarded.ok === false && typeof guarded.reason === "string");
+  check("合并失败后磁盘上的 tasks.json 一字未改", fs.readFileSync(guardedPath, "utf8") === commentJson);
+
+  const freshPath = path.join(guardedDir, "fresh", "tasks.json");
+  fs.mkdirSync(path.dirname(freshPath), { recursive: true });
+  const fresh = await taskFile.mergeTasksFile(freshPath, [{ label: "新任务" }]);
+  check("文件不存在时正常新建并写盘", fresh.ok === true && JSON.parse(fs.readFileSync(freshPath, "utf8")).tasks[0].label === "新任务");
+
+  check("BUILD_DIR_NAME 对外可见（extension.js 要靠它建 .pta-build）", runner.BUILD_DIR_NAME === ".pta-build");
+  check(
+    "写任务前会先建 .pta-build 目录",
+    /problemDir,\s*runner\.BUILD_DIR_NAME/.test(
+      fs.readFileSync(path.join(__dirname, "..", "extension.js"), "utf8")
     )
   );
 

@@ -7,6 +7,32 @@
 
 ## [Unreleased]
 
+## [0.1.1] - 2026-10-09
+
+### 修复
+
+- **不再可能清空你已有的 `.vscode/tasks.json`**。原先写入前用
+  `try { JSON.parse(...) } catch { /* 没有就新建 */ }` 读现有文件，
+  而 VS Code 的 `tasks.json` 允许写注释 —— 一旦文件里有注释或尾随逗号，
+  解析失败会被当成「文件不存在」，你原有的任务就被整份覆盖掉了。
+  现在解析失败一律**只跳过写入**并提示，绝不新建覆盖；同时保留原文件的缩进
+  （不会再把你 4 空格的排版改成 2 空格），`inputs` 等其它顶层键也不再丢失。
+  逻辑抽到 `src/taskFile.js`，带回归测试。
+- **`PTA Build` / `PTA Run Sample` 任务不再因缺目录而失败**。任务把产物写到
+  `<题目目录>/.pta-build/`，而这个目录原先只在面板上跑过一次「运行样例」后才会创建，
+  于是建完题直接跑任务，g++ 只会回一句 `No such file or directory`。
+  现在写任务时会一并建好目录。
+- **Windows 上任务显式使用 `cmd.exe`**。`type: "shell"` 且不指定 shell 时，
+  VS Code 用默认终端 profile；默认是 Windows PowerShell 时，
+  命令里的 `&&` 与输入重定向 `<` 都不是合法语法，任务会直接报错。
+  现在 Windows 上固定 `cmd.exe`（与 xmuoj 插件、`.vscode-cpp-template` 一致），
+  其它平台沿用默认 shell。
+
+### 变更
+
+- readme 里的安装示例文件名写的是 `pta-notebook-0.1.0.vsix`，
+  与打包产物 `pta-toolkit-<version>.vsix` 不符，已改正。
+
 ## [0.1.0] - 2026-10-04
 
 首个版本，可日常使用。
