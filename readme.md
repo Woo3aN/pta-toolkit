@@ -108,11 +108,11 @@ code --install-extension pta-toolkit-0.1.3.vsix
 ### 题目预览面板
 
 在侧边栏点一道题，就会在编辑器旁开一个面板：渲染好的题面（Markdown 表格、围栏代码块、
-`$…$` / `$$…$$` 公式）、题目信息，以及一排操作按钮。
+公式）、题目信息、一排操作按钮。面板的题面直接读本地 `problem.md`（生成的包装会剥掉，
+避免和面板自己的信息重复）；「刷新题面」会回 PTA 重新拉取并重写该文件。
 
-题目信息与生成到本地的 `problem.md` 是**同一套布局**（共用 `src/problemInfo.js` 出文案）：
-顶部一行是时限与内存，末尾「详细信息」里是题集 / 题型 / 分值 / 难度 / 作者 / 在线地址 / 本地抓取。
-所以**还没创建代码时，看到的就是创建之后那份题面里的同一批信息**。徽章则只留本地状态
+题目信息与 `problem.md` 共用同一套布局（`src/problemInfo.js`）：顶部一行是时限与内存，
+末尾「详细信息」是题集 / 题型 / 分值 / 作者 / 在线地址 / 本地抓取；徽章只留本地状态
 （做题状态 / 语言 / 源码文件）。
 
 ```
@@ -388,13 +388,11 @@ PTA 随时可能改接口。所有端点都集中在 `src/ptaApi.js`，真出问
 - **编译参数照抄 PTA 评测机**（`src/compilers.js`）：
   `g++ -DONLINE_JUDGE -fno-tree-ch -O2 -Wall -std=c++17 -pipe $src -lm -o $exe`。
   `-DONLINE_JUDGE` 会改变很多竞赛模板的行为，漏掉就会出现「本地过、提交挂」。
-  写进 `.vscode/tasks.json` 的命令会按需给路径加引号 —— 标题里的空格会让 shell 拆断参数。
-  Windows 上这两个任务会显式指定 `cmd.exe`：`type: "shell"` 的默认 shell 是终端 profile，
-  默认的 Windows PowerShell 不认 `&&` 和输入重定向 `<`，任务会直接报语法错。
-  写任务时还会顺手建好 `.pta-build/`（g++ 不会自己建目录）。
-  合并 tasks.json 的活由 `src/taskFile.js` 干：**解析不了就整个跳过，绝不新建覆盖**
-  —— 这个文件里可以写注释，早先那一版会把「有注释」误判成「文件不存在」，
-  把用户已有的任务清掉。
+- **写入 `.vscode/tasks.json` 的任务**（`src/taskFile.js`）：路径按需加引号
+  （标题里的空格会拆断参数）；Windows 上显式用 `cmd.exe`（默认的 PowerShell 不认
+  `&&` 和输入重定向 `<`）；写任务前先建好 `.pta-build/`（g++ 不会自己建目录）。
+  合并时**解析不了就整个跳过，绝不新建覆盖** —— `tasks.json` 允许写注释，
+  早先把「有注释」误判成「文件不存在」，会把用户已有的任务清掉。
 - **索引从磁盘生成**：`index.md` 由各题 `.pta.json` 汇总而来，永远与本地实际文件一致。
 - **单位别猜**：PTA 提交记录里的 `time` 是**秒**、`memory` 是**字节**，
   题目里的 `timeLimit` / `memoryLimit` 才是**毫秒 / KB**。
@@ -414,7 +412,7 @@ code --install-extension pta-toolkit-0.1.3.vsix --force
 测试：
 
 ```bash
-node test/offline.js             # 离线 341 项：目录命名、不覆盖规则、笔记同步、编译器命令、
+node test/offline.js             # 离线 347 项：目录命名、不覆盖规则、笔记同步、编译器命令、
                                  #   真跑样例、二维码、Set-Cookie、收藏夹、做题状态、侧边栏节点、
                                  #   提交报告、Markdown 渲染、预览面板 HTML、tasks.json 合并、
                                  #   题集「已截止」文案、面板↔根目录的递归回归、公式行内渲染、

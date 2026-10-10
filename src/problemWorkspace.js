@@ -259,7 +259,11 @@ function buildProblemMarkdown(problem, context) {
   lines.push(statement || "_PTA 没有返回题面正文。_");
   lines.push("");
 
-  if (samples.length) {
+  // 题面里已经有「输入样例 / 输出样例」时不再整段重复 —— 网页上本来就只有这一组。
+  // 样例文件（samples/{n}.in|out）照常落盘，只在题面里提一句。
+  const statementHasSamples = /输入样例/.test(statement) && /输出样例/.test(statement);
+
+  if (samples.length && !statementHasSamples) {
     lines.push("## 样例");
     lines.push("");
     samples.forEach((sample, index) => {
@@ -276,6 +280,11 @@ function buildProblemMarkdown(problem, context) {
     });
     lines.push(
       `> 样例已同时写入 \`${SAMPLES_DIR_NAME}/\` 目录（\`1.in\` / \`1.out\` …），方便本地直接跑。`
+    );
+    lines.push("");
+  } else if (samples.length) {
+    lines.push(
+      `> 样例已写入 \`${SAMPLES_DIR_NAME}/\` 目录（\`1.in\` / \`1.out\` …），方便本地直接跑。`
     );
     lines.push("");
   } else {

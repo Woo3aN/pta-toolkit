@@ -1432,6 +1432,59 @@ async function main() {
     /async function refreshProblemFromPanel[\s\S]{0,900}refreshProblemWorkspace\(/.test(extSource)
   );
 
+  console.log("\n32) 题面里已有样例时不再重复生成「样例」小节");
+
+  // PTA 的题面本来就带「### 输入样例: / ### 输出样例:」，
+  // 生成器再追加一整个「## 样例」小节就是同样内容显示两遍。
+  const withSamplesProblem = {
+    id: "238",
+    label: "3.1",
+    title: "最长对称子串",
+    type: "PROGRAMMING",
+    score: 25,
+    difficulty: 8,
+    author: "陈越",
+    compiler: "GCC",
+    description: [
+      "给定一个字符串，求最长对称子串。",
+      "",
+      "### 输入样例:",
+      "",
+      "```in",
+      "Is PAT&TAP symmetric?",
+      "```",
+      "",
+      "### 输出样例:",
+      "",
+      "```out",
+      "11",
+      "```"
+    ].join("\n"),
+    problemConfig: {
+      programmingProblemConfig: {
+        timeLimit: 400,
+        memoryLimit: 65536,
+        exampleTestDatas: [{ name: "", input: "Is PAT&TAP symmetric?\n", output: "11\n" }]
+      }
+    }
+  };
+  const withSamples = await ws.ensureProblemWorkspace({
+    workspaceRoot: root,
+    problemSetId: "12",
+    problemSetName: "浙大版《C语言程序设计（第3版）》题目集",
+    problem: withSamplesProblem,
+    language: "C++",
+    fileNameFormat: "{label}-{title}",
+    url: "https://pintia.cn/problem-sets/12/exam/problems/type/7?problemSetProblemId=238"
+  });
+  const dupStatement = fs.readFileSync(withSamples.statementPath, "utf8");
+  check("题面里已有样例：不再生成「## 样例」小节", !dupStatement.includes("## 样例"), dupStatement);
+  check("但会提一句样例已写入本地", dupStatement.includes("样例已写入"));
+  check("样例文件照常落盘", fs.existsSync(path.join(withSamples.problemDir, "samples", "1.in")));
+  check("题面自己的「输入样例:」原样保留", dupStatement.includes("### 输入样例:"));
+  check("顶部仍只有时限与内存一行", dupStatement.includes("> 时间限制 400 ms · 内存限制 65536 KB（64.0 MB）"));
+  check("详细信息在文末（难度 8 非 0，会列出来）", dupStatement.indexOf("## 详细信息") > dupStatement.indexOf("### 输出样例:"));
+
   console.log(`\n${failed === 0 ? "全部通过。" : `${failed} 项失败。`}`);
   console.log(`（临时目录保留在 ${root}，可自行删除）`);
   if (failed) {
