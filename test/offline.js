@@ -730,9 +730,37 @@ async function main() {
   check("行内代码", mdHtml.includes("<code>代码</code>"));
   check("加粗", mdHtml.includes("<strong>加粗</strong>"));
   check("引用", mdHtml.includes("<blockquote>"));
-  check("独占一行的行间公式保留块级", markdown.renderMarkdown("$$m \\times n$$").includes('<span class="math-block">$$m \\times n$$</span>'));
-  check("段落中间的 $$ 转为行内（不切断段落）", mdHtml.includes('<span class="math-inline">$$m \\times n$$</span>'));
-  check("行内公式成对", mdHtml.includes('<span class="math-inline">$n$</span>'));
+  check(
+    "独占一行的 $$…$$ 保留块级（行间公式）",
+    markdown.renderMarkdown("$$m \\times n$$").includes('<span class="math-block">$$m \\times n$$</span>')
+  );
+  // 行内公式必须改写成 \(…\)：MathJax 分隔符是「长的优先」，
+  // 留着 $$…$$ 就一定会被当成行间公式（居中、独占一行），把句子切断。
+  check(
+    "句子中间的 $$…$$ 改写成行内定界符 \\(…\\)",
+    mdHtml.includes('<span class="math-inline">\\(m \\times n\\)</span>')
+  );
+  check("单个 $…$ 也统一成行内定界符 \\(…\\)", mdHtml.includes('<span class="math-inline">\\(n\\)</span>'));
+  check(
+    "整句话仍在同一个 <p> 里（公式没把段落切开）",
+    /<p>公式 [\s\S]*测试。<\/p>/.test(mdHtml) && !mdHtml.includes('<p><span class="math-block">'),
+    mdHtml
+  );
+
+  // 真实题面：题集 2097121290578927616「3.0 稀疏矩阵加法」，PTA 把 $$…$$ 写在句子中间。
+  // 这段以前会被切成「给定两个矩阵 / A / 和 / B / ，求其和矩阵 / C=A+B / 。」七零八落。
+  const realMathLine = "给定两个矩阵$$A$$和$$B$$，求其和矩阵$$C=A+B$$。";
+  const realMathHtml = markdown.renderMarkdown(realMathLine);
+  check(
+    "真实题面：一句话里的多个 $$…$$ 不切段落",
+    (realMathHtml.match(/<p>/g) || []).length === 1 && /^<p>给定两个矩阵[\s\S]*。<\/p>$/.test(realMathHtml),
+    realMathHtml
+  );
+  check(
+    "真实题面：三个公式全部走行内定界符，一个 $$ 都不留",
+    realMathHtml.indexOf("$$") < 0 && (realMathHtml.match(/class="math-inline"/g) || []).length === 3,
+    realMathHtml
+  );
   check("HTML 被转义（防注入）", mdHtml.includes("&lt;tag&gt;") && !mdHtml.includes("<tag>"));
   check("& 被转义", mdHtml.includes("&amp;"));
   check("链接", mdHtml.includes('<a href="https://pintia.cn">PTA</a>'));
@@ -929,16 +957,46 @@ async function main() {
   // 背景：peekRoot → resolveCurrentProblem → resolveProblemFromPanel → peekRoot。
   // 「预览面板里有题目」+「没设 pta.workspaceRoot」同时成立就无限递归，
   // 抛 RangeError: Maximum call stack size exceeded（打开题目预览、侧边栏刷新都会踩到）。
-  // extension.js 依赖 vscode，这里把 vscode 换成一个最小替身，直接跑真函数。
-  function loadExtensionInternals(settings) {
+  // extension.js 和 src/tree.js 都依赖 vscode，这里把 vscode 换成一个最小替身，
+  // 再直接 _compile 真实源码，这样能调真函数、断言真行为。
+  function loadWithFakeVscode(relPath, settings, appendSource) {
     const Module = require("module");
+    class FakeTreeItem {
+      constructor(label, collapsibleState) {
+        this.label = label;
+        this.collapsibleState = collapsibleState;
+      }
+    }
     const fakeVscode = {
       window: { activeTextEditor: undefined, showWarningMessage: async () => undefined },
       workspace: {
         getConfiguration: () => ({
           get: (key, fallback) => (key in settings ? settings[key] : fallback)
         })
-      }
+      },
+      TreeItem: FakeTreeItem,
+      TreeItemCollapsibleState: { None: 0, Collapsed: 1, Expanded: 2 },
+      ThemeIcon: class ThemeIcon {
+        constructor(id) {
+          this.id = id;
+        }
+      },
+      ThemeColor: class ThemeColor {
+        constructor(id) {
+          this.id = id;
+        }
+      },
+      EventEmitter: class EventEmitter {
+        constructor() {
+          this.event = () => ({ dispose() {} });
+        }
+      },
+      MarkdownString: class MarkdownString {
+        constructor(value) {
+          this.value = value;
+        }
+      },
+      Uri: { file: (p) => ({ fsPath: p }) }
     };
     const original = Module._load;
     Module._load = function (request) {
@@ -948,18 +1006,24 @@ async function main() {
       return original.apply(this, arguments);
     };
     try {
-      const extPath = path.join(__dirname, "..", "extension.js");
-      const source =
-        fs.readFileSync(extPath, "utf8") +
-        "\nmodule.exports.__test = { peekRoot, resolveCurrentProblem, resolveProblemFromPanel, setPanelRef: (r) => { panelProblemRef = r; } };\n";
-      const mod = new Module(extPath, null);
-      mod.filename = extPath;
-      mod.paths = Module._nodeModulePaths(path.dirname(extPath));
-      mod._compile(source, extPath);
-      return mod.exports.__test;
+      const full = path.join(__dirname, "..", relPath);
+      const source = fs.readFileSync(full, "utf8") + (appendSource || "");
+      const mod = new Module(full, null);
+      mod.filename = full;
+      mod.paths = Module._nodeModulePaths(path.dirname(full));
+      mod._compile(source, full);
+      return mod.exports;
     } finally {
       Module._load = original;
     }
+  }
+
+  function loadExtensionInternals(settings) {
+    return loadWithFakeVscode(
+      "extension.js",
+      settings,
+      "\nmodule.exports.__test = { peekRoot, resolveCurrentProblem, resolveProblemFromPanel, setPanelRef: (r) => { panelProblemRef = r; } };\n"
+    ).__test;
   }
 
   const panelRef = { problemSetId: "12", problemId: "237" };
@@ -993,6 +1057,94 @@ async function main() {
   const noPanel = loadExtensionInternals({ workspaceRoot: "" });
   noPanel.setPanelRef(null);
   check("面板里没题目时依然返回空串（不会误伤正常路径）", (await noPanel.peekRoot()) === "");
+
+  console.log("\n28) 内置模板、note 块位置、题集没权限时的提示");
+
+  const cppTemplate = templates.sourceFileContent("C++").content;
+  check(
+    "C++ 模板用 <iostream>，不再是 <bits/stdc++.h>",
+    cppTemplate.includes("#include <iostream>") && cppTemplate.indexOf("bits/stdc++") < 0,
+    cppTemplate.split("\n")[0]
+  );
+  check("C++ 模板仍然 using namespace std", cppTemplate.includes("using namespace std;"));
+
+  const cppSource = notes.ensureNoteBlock("C++", cppTemplate);
+  check("note 块挪到了文件末尾", cppSource.trimEnd().endsWith("@pintia note=end */"), cppSource);
+  check("note 块在 main 之后，不挡着看代码", cppSource.indexOf("@pintia note=start") > cppSource.indexOf("int main()"));
+  check("补出来的 note 块仍然只有一处 start", cppSource.split("@pintia note=start").length - 1 === 1);
+  check("已经有 note 块时原样返回，不再重复添加", notes.ensureNoteBlock("C++", cppSource) === cppSource);
+
+  const pySource = notes.ensureNoteBlock("Python", templates.sourceFileContent("Python").content);
+  check("Python 的 note 块也在末尾", pySource.trimEnd().endsWith("# @pintia note=end"), pySource);
+
+  check(
+    "403 被识别成「没权限」",
+    treeModel.isForbiddenError({ status: 403 }) === true && treeModel.isForbiddenError({ kind: "forbidden" }) === true
+  );
+  check(
+    "其它错误不算没权限",
+    treeModel.isForbiddenError({ status: 500 }) === false && treeModel.isForbiddenError(null) === false
+  );
+  check(
+    "已截止的题集说「已截止」（哪怕 PTA 状态还是 PENDING）",
+    treeModel.forbiddenProblemSetMessage({ status: "PENDING", endAt: endedBefore }) === "题集已截止，PTA 不再开放内容"
+  );
+  check(
+    "未开始的题集说「尚未开始」",
+    treeModel.forbiddenProblemSetMessage({ status: "PENDING", endAt: endedAfter }) === "题集尚未开始，PTA 暂不开放内容"
+  );
+  check(
+    "状态不明时给通用说法",
+    treeModel.forbiddenProblemSetMessage({ status: "PROCESSING", endAt: endedAfter }).includes("没有权限")
+  );
+
+  // 行为测试：把 getProblemSummary 换成抛 403，看 setChildren 到底给孩子什么
+  const treeModule = loadWithFakeVscode("src/tree.js", {}, "");
+  const provider = new treeModule.PtaTreeDataProvider({
+    getCookie: async () => "fake-cookie",
+    getWorkspaceRoot: async () => "",
+    log: () => {}
+  });
+  const originalGetSummary = api.getProblemSummary;
+
+  api.getProblemSummary = async () => {
+    throw new api.PtaError("PTA 返回 403：没有权限（题集可能尚未开始、已结束或未对你开放）。", "forbidden", 403);
+  };
+  let endedChildren = null;
+  try {
+    endedChildren = await provider.setChildren({
+      setRef: { problemSetId: "1", problemSetName: "x", status: "PENDING", endAt: endedBefore }
+    });
+  } finally {
+    api.getProblemSummary = originalGetSummary;
+  }
+  check(
+    "展开已截止的题集：显示人话，而不是原始 403 错误串",
+    endedChildren && endedChildren.length === 1 && endedChildren[0].label === "题集已截止，PTA 不再开放内容",
+    endedChildren && endedChildren[0] && endedChildren[0].label
+  );
+  check(
+    "并且不再用红色 error 图标",
+    endedChildren && endedChildren[0] && endedChildren[0].iconPath && endedChildren[0].iconPath.id === "lock"
+  );
+
+  const provider2 = new treeModule.PtaTreeDataProvider({
+    getCookie: async () => "fake-cookie",
+    getWorkspaceRoot: async () => "",
+    log: () => {}
+  });
+  api.getProblemSummary = async () => {
+    throw new Error("boom");
+  };
+  let propagated = null;
+  try {
+    await provider2.setChildren({ setRef: { problemSetId: "2", problemSetName: "y" } });
+  } catch (error) {
+    propagated = error;
+  } finally {
+    api.getProblemSummary = originalGetSummary;
+  }
+  check("非 403 的错误照旧抛出去（没有被顺手吞掉）", propagated !== null && propagated.message === "boom");
 
   console.log(`\n${failed === 0 ? "全部通过。" : `${failed} 项失败。`}`);
   console.log(`（临时目录保留在 ${root}，可自行删除）`);

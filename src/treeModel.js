@@ -75,6 +75,23 @@ function hasEnded(endAt, now) {
   return at <= current;
 }
 
+/** 403（没权限）。PTA 对「尚未开始」和「已经截止」的题集统一回 403 —— 那是正常状态，不是故障。 */
+function isForbiddenError(error) {
+  return Boolean(error) && (error.status === 403 || error.kind === "forbidden");
+}
+
+/** 展开一个没权限的题集时显示的话（比甩一个红叉加原始错误串友好得多）。 */
+function forbiddenProblemSetMessage(setRef, now) {
+  const ref = setRef || {};
+  if (hasEnded(ref.endAt, now)) {
+    return "题集已截止，PTA 不再开放内容";
+  }
+  if (ref.status === "PENDING" || ref.status === "READY") {
+    return "题集尚未开始，PTA 暂不开放内容";
+  }
+  return "没有权限查看这个题集（未开始、已截止或未对你开放）";
+}
+
 /** 题集节点右侧的灰字 */
 function problemSetDescription(item, options) {
   const source = item || {};
@@ -143,6 +160,8 @@ module.exports = {
   SET_STATUS_TEXT,
   ENDED_TEXT,
   hasEnded,
+  isForbiddenError,
+  forbiddenProblemSetMessage,
   problemIconId,
   problemThemeColorId,
   problemSetStatusText,

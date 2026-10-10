@@ -138,7 +138,7 @@ function buildNoteBlock(language, inner) {
   return lines.join("\n");
 }
 
-/** 源码里没有 note 块时补一个空的（放在文件最前面）。 */
+/** 源码里没有 note 块时补一个空的（放在文件**末尾**，不挡着看代码）。 */
 function ensureNoteBlock(language, text) {
   const source = String(text === null || text === undefined ? "" : text);
   if (ANNOTATION.test(source) && extractBlocks(source).notes !== "" ) {
@@ -147,7 +147,9 @@ function ensureNoteBlock(language, text) {
   if (/@pintia\s+note\s*=\s*start/.test(source)) {
     return source;
   }
-  return `${buildNoteBlock(language, "")}\n\n${source.replace(/^\s*\n/, "")}`;
+  const block = buildNoteBlock(language, "");
+  const body = source.replace(/\s+$/, "");
+  return body ? `${body}\n\n${block}\n` : `${block}\n`;
 }
 
 /**

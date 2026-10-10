@@ -25,7 +25,7 @@ const LANGUAGE_ALIAS = {
 
 const BUILTIN_TEMPLATES = {
   "C++": [
-    "#include <bits/stdc++.h>",
+    "#include <iostream>",
     "using namespace std;",
     "",
     "int main() {",

@@ -162,7 +162,11 @@ class PtaTreeDataProvider {
     item.contextValue = opts.isPublic ? "pta.set.public" : "pta.set";
     item.setRef = {
       problemSetId: String(problemSet.id),
-      problemSetName: problemSet.name || ""
+      problemSetName: problemSet.name || "",
+      // 带着展开时用来把「403 没权限」翻译成人话：
+      // PTA 对尚未开始 / 已截止的题集就是回 403，得知道是哪一种才能说清楚。
+      status: problemSet.status || "",
+      endAt: problemSet.endAt || ""
     };
     item.description = treeModel.problemSetDescription(problemSet);
     item.iconPath = new vscode.ThemeIcon(treeModel.problemSetIconId(Object.assign({}, problemSet, opts)));
@@ -248,16 +252,27 @@ class PtaTreeDataProvider {
 
     let problems = this.problemCache.get(problemSetId);
     if (!problems) {
-      const summaries = await api.getProblemSummary(problemSetId, cookie);
-      const types = Object.keys(summaries).filter((type) => api.SAMPLE_BEARING_TYPES.indexOf(type) >= 0);
-      if (!types.length) {
-        return [messageItem("这个题集里没有可导出的编程题", "info")];
+      let collected;
+      try {
+        const summaries = await api.getProblemSummary(problemSetId, cookie);
+        const types = Object.keys(summaries).filter((type) => api.SAMPLE_BEARING_TYPES.indexOf(type) >= 0);
+        if (!types.length) {
+          return [messageItem("这个题集里没有可导出的编程题", "info")];
+        }
+        collected = [];
+        for (const type of types) {
+          const list = await api.getAllProblems(problemSetId, type, cookie, { interval: 0 });
+          collected = collected.concat(list);
+        }
+      } catch (error) {
+        // PTA 对「尚未开始」和「已经截止」的题集统一回 403：这是正常状态，不是加载故障。
+        // 所以给一句人能看懂的话，别甩一个红叉加原始错误串。
+        if (treeModel.isForbiddenError(error)) {
+          return [messageItem(treeModel.forbiddenProblemSetMessage(element.setRef), "lock")];
+        }
+        throw error;
       }
-      problems = [];
-      for (const type of types) {
-        const list = await api.getAllProblems(problemSetId, type, cookie, { interval: 0 });
-        problems = problems.concat(list);
-      }
+      problems = collected;
       this.problemCache.set(problemSetId, problems);
     }
     if (!problems.length) {

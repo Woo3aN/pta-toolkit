@@ -63,23 +63,47 @@ function renderMarkdown(markdown) {
     return `${CODE_PLACEHOLDER}${codeBlocks.length - 1}${PLACEHOLDER_END}`;
   });
 
+  // 公式先抽出来占位，只记原文；到底按行间还是行内渲染，等看到它在哪一行再决定。
   // 行间公式先于行内公式，避免 $$ 被拆成两个 $
-  const D = "$";
   text = text.replace(/\$\$([\s\S]+?)\$\$/g, (_match, expression) => {
-    mathBlocks.push(`<span class="math-block">${D}${D}${escapeHtml(expression.trim())}${D}${D}</span>`);
+    mathBlocks.push({ expression: expression.trim(), block: true });
     return `${MATH_PLACEHOLDER}${mathBlocks.length - 1}${PLACEHOLDER_END}`;
   });
   text = text.replace(/\$(\S(?:[^$\n]*\S)?)\$/g, (_match, expression) => {
-    mathBlocks.push(`<span class="math-inline">${D}${escapeHtml(expression)}${D}</span>`);
+    mathBlocks.push({ expression, block: false });
     return `${MATH_PLACEHOLDER}${mathBlocks.length - 1}${PLACEHOLDER_END}`;
   });
 
   text = escapeHtml(text);
 
-  const restore = (value) =>
-    value
-      .replace(new RegExp(`${CODE_PLACEHOLDER}(\\d+)${PLACEHOLDER_END}`, "g"), (_m, index) => codeBlocks[Number(index)] || "")
-      .replace(new RegExp(`${MATH_PLACEHOLDER}(\\d+)${PLACEHOLDER_END}`, "g"), (_m, index) => mathBlocks[Number(index)] || "");
+  const restoreCodes = (value) =>
+    value.replace(new RegExp(`${CODE_PLACEHOLDER}(\\d+)${PLACEHOLDER_END}`, "g"), (_m, index) => codeBlocks[Number(index)] || "");
+
+  /**
+   * 行内公式的定界符必须是 \(…\)，不能留 $$…$$。
+   *
+   * 面板里 MathJax 配的是 displayMath: [['$$','$$']] + inlineMath: [['$','$'], ['\\(','\\)']]，
+   * 而它匹配分隔符时**长的优先** —— 所以 $$…$$ 一定会被当成**行间**公式（居中、独占一行）。
+   * PTA 题面偏偏爱把 $$…$$ 写在句子中间，比如
+   * 「给定两个矩阵$$A$$和$$B$$，求其和矩阵$$C=A+B$$。」。
+   * 以前这里只把 class 从 math-block 改成 math-inline、分隔符照旧留着 $$，
+   * 于是 MathJax 照旧按行间渲染，一句话被居中切成好几段。
+   */
+  const mathInlineHtml = (item) => `<span class="math-inline">\\(${escapeHtml(item.expression)}\\)</span>`;
+  /** 真正的行间公式：留给 MathJax 按 displayMath 渲染 */
+  const mathBlockHtml = (item) => `<span class="math-block">$$${escapeHtml(item.expression)}$$</span>`;
+
+  const restoreMath = (value, render) =>
+    restoreCodes(value).replace(new RegExp(`${MATH_PLACEHOLDER}(\\d+)${PLACEHOLDER_END}`, "g"), (_m, index) => {
+      const item = mathBlocks[Number(index)];
+      return item ? render(item) : "";
+    });
+
+  // 段落内部：公式一律行内
+  const restoreInline = (value) => restoreMath(value, mathInlineHtml);
+  // 独立成行：原本写 $$…$$ 的按行间，单个 $…$ 的仍按行内
+  const restoreStandalone = (value) =>
+    restoreMath(value, (item) => (item.block ? mathBlockHtml(item) : mathInlineHtml(item)));
 
   const lines = text.split("\n");
   const out = [];
@@ -87,12 +111,12 @@ function renderMarkdown(markdown) {
   let listType = "";
   let inQuote = false;
 
-  // 行内渲染 = 先做行内标记，再把代码块 / 公式的占位符换回 HTML。
-  // 两步都要走，否则段落中间的公式会留下占位符。
-  // PTA 常把 $$…$$ 写在一句话中间（如「计算公式：$$C=…$$，式中：」），
-  // 这时按行内显示，避免块级公式把段落切断。
-  const renderInline = (value) =>
-    restore(inline(value)).replace(/class="math-block"/g, 'class="math-inline"');
+  /**
+   * 段落 / 表格单元格 / 列表项等处的完整行内渲染：
+   * 先做行内标记（粗体、链接、行内代码…），再把代码块与公式的占位符换回来。
+   * 两步都要走，否则段落中间的公式会留下占位符。
+   */
+  const renderInline = (value) => restoreInline(inline(value));
 
   const closeParagraph = () => {
     if (paragraph.length) {
@@ -129,7 +153,7 @@ function renderMarkdown(markdown) {
       closeParagraph();
       closeList();
       closeQuote();
-      out.push(restore(trimmed));
+      out.push(restoreStandalone(trimmed));
       continue;
     }
 
