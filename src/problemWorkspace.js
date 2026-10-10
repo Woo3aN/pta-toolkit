@@ -243,27 +243,20 @@ function buildProblemMarkdown(problem, context) {
 
   lines.push(`# ${problem.label ? problem.label + " " : ""}${problem.title || ""}`.trim());
   lines.push("");
-  if (ctx.problemSetName) {
-    lines.push(`- 题集：${ctx.problemSetName}（\`${ctx.problemSetId}\`）`);
-  }
-  lines.push(`- 题型：${ctx.problemTypeName || problem.type || "未知"}`);
-  if (problem.score !== undefined && problem.score !== null) {
-    lines.push(`- 分值：${problem.score}`);
-  }
+  // 顶部只留「读题真正要用」的两条：时限与内存。
+  // 题集 / 题型 / 分值 / 作者 / 在线地址 / 抓取时间这些都挪到文件末尾的「详细信息」，
+  // 免得每打开一道题先翻一屏元信息才看到正文。
+  const limits = [];
   if (config.timeLimit) {
-    lines.push(`- 时间限制：${formatLimit(config.timeLimit)}`);
+    limits.push(`时间限制 ${formatLimit(config.timeLimit)}`);
   }
   if (config.memoryLimit) {
-    lines.push(`- 内存限制：${formatMemory(config.memoryLimit)}`);
+    limits.push(`内存限制 ${formatMemory(config.memoryLimit)}`);
   }
-  if (problem.author) {
-    lines.push(`- 作者 / 来源：${problem.author}`);
+  if (limits.length) {
+    lines.push(`> ${limits.join(" · ")}`);
+    lines.push("");
   }
-  if (ctx.url) {
-    lines.push(`- 在线地址：${ctx.url}`);
-  }
-  lines.push(`- 本地抓取：${timestampForFile()}`);
-  lines.push("");
   lines.push("---");
   lines.push("");
 
@@ -305,6 +298,25 @@ function buildProblemMarkdown(problem, context) {
     );
     lines.push("");
   }
+
+  // 详细信息：不挡着读题，统一收在文件最后
+  lines.push("## 详细信息");
+  lines.push("");
+  if (ctx.problemSetName) {
+    lines.push(`- 题集：${ctx.problemSetName}（\`${ctx.problemSetId}\`）`);
+  }
+  lines.push(`- 题型：${ctx.problemTypeName || problem.type || "未知"}`);
+  if (problem.score !== undefined && problem.score !== null) {
+    lines.push(`- 分值：${problem.score}`);
+  }
+  if (problem.author) {
+    lines.push(`- 作者 / 来源：${problem.author}`);
+  }
+  if (ctx.url) {
+    lines.push(`- 在线地址：${ctx.url}`);
+  }
+  lines.push(`- 本地抓取：${timestampForFile()}`);
+  lines.push("");
 
   lines.push("---");
   lines.push("");

@@ -1146,6 +1146,34 @@ async function main() {
   }
   check("非 403 的错误照旧抛出去（没有被顺手吞掉）", propagated !== null && propagated.message === "boom");
 
+  console.log("\n29) 题面文件的信息安排与面板字号");
+
+  // 题面：顶部只留「读题要用」的时限 / 内存，其余元信息收进文件末尾的「## 详细信息」
+  const bodyStart = statement.indexOf("## 题目描述");
+  const detailStart = statement.indexOf("## 详细信息");
+  check("顶部把时限与内存合成一行", statement.includes("> 时间限制 400 ms · 内存限制"));
+  check("时限 / 内存排在正文之前", statement.indexOf("> 时间限制") < bodyStart);
+  check(
+    "顶部不再逐条列元信息",
+    bodyStart > 0 && !/^- (题集|题型|分值|作者|本地抓取)/m.test(statement.slice(0, bodyStart)),
+    statement.slice(0, bodyStart)
+  );
+  check("末尾有「## 详细信息」小节", detailStart > bodyStart);
+  check("题集挪到了详细信息里", statement.indexOf("- 题集：", detailStart) > 0);
+  check("作者 / 来源也挪到了详细信息里", statement.indexOf("- 作者 / 来源：", detailStart) > 0);
+  check("在线地址没被删掉，只是挪了位置", statement.indexOf("https://pintia.cn", detailStart) > 0);
+  check("本地抓取时间也在详细信息里", statement.indexOf("- 本地抓取：", detailStart) > 0);
+  check("详细信息排在样例之后（不挡着读题）", detailStart > statement.indexOf("## 样例"));
+
+  // 面板字号：基准不再完全跟着编辑器的 13px，且标题用 em 一起缩放
+  check(
+    "面板基准字号至少 15px",
+    htmlFresh.includes("font-size: max(15px, var(--vscode-font-size")
+  );
+  check("正文标题改用 em，跟着基准一起放大", htmlFresh.includes(".statement h2 { font-size: 1.2em;"));
+  check("面板标题改用 em", htmlFresh.includes("h1 { font-size: 1.5em;"));
+  check("样式里不再有写死的 11px 小字号", htmlFresh.indexOf("font-size: 11px") < 0);
+
   console.log(`\n${failed === 0 ? "全部通过。" : `${failed} 项失败。`}`);
   console.log(`（临时目录保留在 ${root}，可自行删除）`);
   if (failed) {

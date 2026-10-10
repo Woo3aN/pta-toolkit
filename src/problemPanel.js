@@ -87,67 +87,70 @@ const BASE_STYLE = `
   body {
     margin: 0; padding: 0;
     font-family: var(--vscode-font-family);
-    font-size: var(--vscode-font-size, 13px);
+    /* 这是「读题」面板，不是编辑器。完全跟着编辑器的字号（默认才 13px）读起来偏小，
+       所以用 max() 兜底：至少 15px；用户把编辑器字号调大时也跟着一起变大。 */
+    font-size: max(15px, var(--vscode-font-size, 13px));
     background: var(--vscode-editor-background);
     color: var(--vscode-editor-foreground);
   }
-  .wrap { max-width: 860px; margin: 0 auto; padding: 24px 28px 60px; }
-  h1 { font-size: 20px; font-weight: 500; margin: 0 0 14px; }
+  .wrap { max-width: 900px; margin: 0 auto; padding: 26px 30px 64px; }
+  h1 { font-size: 1.5em; font-weight: 500; margin: 0 0 14px; }
   .badges { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 16px; }
   .badge {
     display: inline-flex; align-items: center; gap: 6px;
     background: var(--vscode-badge-background); color: var(--vscode-badge-foreground);
-    border-radius: 999px; padding: 3px 10px; font-size: 11px;
+    border-radius: 999px; padding: 4px 11px; font-size: .8em;
   }
   .badge-key { opacity: .7; }
   .actions { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 18px; }
   .action {
     display: inline-flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px;
-    min-width: 76px; min-height: 56px; padding: 8px 10px; cursor: pointer;
+    min-width: 86px; min-height: 62px; padding: 9px 11px; cursor: pointer;
     border: 1px solid var(--vscode-button-border, transparent); border-radius: 8px;
     background: var(--vscode-button-secondaryBackground); color: var(--vscode-button-secondaryForeground);
-    font-family: inherit; font-size: 11px;
+    font-family: inherit; font-size: .88em;
   }
   .action:hover { background: var(--vscode-button-secondaryHoverBackground); }
   .action.primary { background: var(--vscode-button-background); color: var(--vscode-button-foreground); }
   .action.primary:hover { background: var(--vscode-button-hoverBackground); }
-  .action .ico { display: inline-flex; width: 16px; height: 16px; }
-  .action .ico svg { width: 16px; height: 16px; display: block; }
+  .action .ico { display: inline-flex; width: 18px; height: 18px; }
+  .action .ico svg { width: 18px; height: 18px; display: block; }
   .action .lbl { line-height: 1.2; text-align: center; white-space: nowrap; }
   .rootline {
     display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
     border: 1px solid var(--vscode-panel-border); border-radius: 8px;
-    padding: 10px 12px; margin-bottom: 18px; font-size: 12px;
+    padding: 10px 12px; margin-bottom: 18px; font-size: .88em;
     background: var(--vscode-editorWidget-background);
   }
   .rootline.warn { border-color: var(--vscode-editorWarning-foreground); }
   .rootline code { font-family: var(--vscode-editor-font-family); }
   .rootline .grow { flex: 1 1 auto; min-width: 0; word-break: break-all; }
   .rootline button {
-    cursor: pointer; padding: 4px 10px; border-radius: 6px; font-size: 11px;
+    cursor: pointer; padding: 5px 11px; border-radius: 6px; font-size: .88em;
     border: 1px solid var(--vscode-button-border, transparent);
     background: var(--vscode-button-secondaryBackground); color: var(--vscode-button-secondaryForeground);
   }
   .statement {
     border: 1px solid var(--vscode-panel-border); border-radius: 10px;
-    padding: 4px 20px 16px; background: var(--vscode-editorWidget-background);
+    padding: 6px 22px 18px; background: var(--vscode-editorWidget-background);
   }
+  /* 标题用 em，跟着上面的基准字号一起放大，别写死 px */
   .statement h1, .statement h2, .statement h3, .statement h4 { font-weight: 500; line-height: 1.4; }
-  .statement h1 { font-size: 18px; }
-  .statement h2 { font-size: 16px; margin-top: 22px; border-bottom: 1px solid var(--vscode-panel-border); padding-bottom: 5px; }
-  .statement h3 { font-size: 14px; margin-top: 18px; }
-  .statement p, .statement li { line-height: 1.75; }
+  .statement h1 { font-size: 1.4em; }
+  .statement h2 { font-size: 1.2em; margin-top: 24px; border-bottom: 1px solid var(--vscode-panel-border); padding-bottom: 6px; }
+  .statement h3 { font-size: 1.05em; margin-top: 20px; }
+  .statement p, .statement li { line-height: 1.8; }
   .statement code {
     font-family: var(--vscode-editor-font-family); font-size: .92em;
     background: var(--vscode-textCodeBlock-background); padding: 1px 5px; border-radius: 4px;
   }
   .statement pre.code {
-    background: var(--vscode-textCodeBlock-background); padding: 12px 14px;
+    background: var(--vscode-textCodeBlock-background); padding: 13px 15px;
     border-radius: 8px; overflow: auto;
   }
   .statement pre.code code { background: none; padding: 0; }
   .statement table { border-collapse: collapse; margin: 12px 0; width: 100%; }
-  .statement th, .statement td { border: 1px solid var(--vscode-panel-border); padding: 6px 10px; text-align: left; }
+  .statement th, .statement td { border: 1px solid var(--vscode-panel-border); padding: 7px 11px; text-align: left; }
   .statement th { background: var(--vscode-textCodeBlock-background); font-weight: 500; }
   .statement a { color: var(--vscode-textLink-foreground); }
   .statement img { max-width: 100%; height: auto; }
@@ -161,7 +164,7 @@ const BASE_STYLE = `
   }
   .math-block { display: block; padding: 10px; margin: 10px 0; overflow-x: auto; }
   .hint { color: var(--vscode-descriptionForeground); }
-  .footer { margin-top: 20px; font-size: 11px; color: var(--vscode-descriptionForeground); }
+  .footer { margin-top: 20px; font-size: .85em; color: var(--vscode-descriptionForeground); }
 `;
 
 /**
