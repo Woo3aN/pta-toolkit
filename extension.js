@@ -65,6 +65,7 @@ function getSettings() {
     language: templates.normalizeLanguage(config.get("defaultLanguage", "C++")),
     autoCreateSource: config.get("autoCreateSource", true) !== false,
     createNotesFile: config.get("createNotesFile", true) !== false,
+    codeNotes: config.get("codeNotes", false) === true,
     templateDir: String(config.get("templateDir", "") || "").trim(),
     enableLocalTest: config.get("enableLocalTest", false) === true,
     pythonPath: String(config.get("pythonPath", "") || "").trim(),
@@ -299,6 +300,7 @@ async function buildOneProblem(options) {
     templateDir: settings.templateDir,
     autoCreateSource: settings.autoCreateSource,
     createNotesFile: settings.createNotesFile,
+    codeNotes: settings.codeNotes,
     url: api.buildProblemUrl(opts.problemSetId, opts.problemId, detail.type),
     problemTypeName: api.problemTypeName(detail.type)
   });
@@ -999,6 +1001,7 @@ async function refreshProblemWorkspace(root, problemDir, metadata) {
         templateDir: settings.templateDir,
         autoCreateSource: settings.autoCreateSource,
         createNotesFile: settings.createNotesFile,
+        codeNotes: settings.codeNotes,
         url: metadata.url,
         problemTypeName: metadata.problemTypeName
       })
@@ -1434,6 +1437,18 @@ async function commandTestCurrent() {
 /* ------------------------------------------------------------------ */
 
 async function commandSyncNotes() {
+  // 这个功能默认关（pta.codeNotes）：笔记一般直接写在 Obsidian 里，
+  // 源码里没有 @pintia note 块，同步出来也只是空的占位。
+  if (getSettings().codeNotes !== true) {
+    const pick = await vscode.window.showInformationMessage(
+      "代码内笔记功能未开启（默认关闭）。要在源码里用 @pintia note 块的话，到设置里打开「PTA: 代码内笔记」。",
+      "打开设置"
+    );
+    if (pick === "打开设置") {
+      await vscode.commands.executeCommand("workbench.action.openSettings", "pta.codeNotes");
+    }
+    return;
+  }
   const current = await requireCurrentProblem();
   if (!current) {
     return;

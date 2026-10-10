@@ -197,6 +197,8 @@ console.log("\n6) 文件与版本");
 
 console.log("\n7) readme 结构完整性");
 {
+  // 2026-10-10 起不再维护目录小节（常规热门项目的 readme 也不带）；
+  // 若哪天又加回来了，这里的对应检查会自动生效。
   const toc = [...readme.matchAll(/^\s*-\s*\[(.+?)\]\(#.+?\)\s*$/gm)].map((match) => match[1].trim());
   const headings = readme
     .split("\n")
@@ -204,16 +206,20 @@ console.log("\n7) readme 结构完整性");
     .map((line) => line.replace(/^#+\s*/, "").trim())
     .filter((name) => name !== "目录");
 
-  const notInToc = headings.filter((name) => toc.indexOf(name) < 0);
-  const notInBody = toc.filter((name) => headings.indexOf(name) < 0);
-  if (notInToc.length) {
-    fail(`readme 有这些小节但目录里没列：${notInToc.join(", ")}`);
-  }
-  if (notInBody.length) {
-    fail(`readme 目录里列了但正文没有：${notInBody.join(", ")}`);
-  }
-  if (!notInToc.length && !notInBody.length) {
-    ok(`目录与 ${headings.length} 个章节一一对应`);
+  if (!toc.length) {
+    ok("readme 没有目录小节（无需维护目录对应关系）");
+  } else {
+    const notInToc = headings.filter((name) => toc.indexOf(name) < 0);
+    const notInBody = toc.filter((name) => headings.indexOf(name) < 0);
+    if (notInToc.length) {
+      fail(`readme 有这些小节但目录里没列：${notInToc.join(", ")}`);
+    }
+    if (notInBody.length) {
+      fail(`readme 目录里列了但正文没有：${notInBody.join(", ")}`);
+    }
+    if (!notInToc.length && !notInBody.length) {
+      ok(`目录与 ${headings.length} 个章节一一对应`);
+    }
   }
 
   const required = ["功能特性", "安装", "快速开始", "常见问题", "开发", "致谢", "许可"];

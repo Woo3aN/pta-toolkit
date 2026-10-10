@@ -2,38 +2,13 @@
 
 [![VS Code](https://img.shields.io/badge/VS%20Code-%5E1.88.0-007ACC?logo=visualstudiocode&logoColor=white)](https://code.visualstudio.com/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
-[![Version](https://img.shields.io/badge/version-0.1.3-blue.svg)](CHANGELOG.md)
+[![Version](https://img.shields.io/badge/version-0.2.0-blue.svg)](CHANGELOG.md)
 [![Dependencies](https://img.shields.io/badge/dependencies-0-brightgreen.svg)](#实现说明)
 
 > 把拼题A（PTA / pintia.cn）的题目拉进 VS Code：**每题一个文件夹**，
 > 在编辑器里看题面、写代码、跑样例、提交判题，笔记直接进 Obsidian。
 
 零依赖、免编译的 VS Code 扩展 —— 不用 `npm install`，改代码也不用构建，`F5` 直接调试。
-
-## 目录
-
-- [功能特性](#功能特性)
-- [环境要求](#环境要求)
-- [安装](#安装)
-- [快速开始](#快速开始)
-- [使用](#使用)
-  - [侧边栏](#侧边栏)
-  - [题目预览面板](#题目预览面板)
-  - [命令](#命令)
-  - [配置](#配置)
-- [目录结构](#目录结构)
-- [命名规则](#命名规则)
-- [笔记](#笔记)
-- [登录](#登录)
-- [常见问题](#常见问题)
-- [已知限制](#已知限制)
-- [实现说明](#实现说明)
-- [开发](#开发)
-- [更新日志](#更新日志)
-- [致谢](#致谢)
-  - [第三方代码](#第三方代码)
-- [贡献](#贡献)
-- [许可](#许可)
 
 ## 功能特性
 
@@ -67,7 +42,7 @@
 ## 安装
 
 ```bash
-code --install-extension pta-toolkit-0.1.3.vsix
+code --install-extension pta-toolkit-0.2.0.vsix
 ```
 
 也可以在 VS Code 扩展面板右上角 `...` → 从 VSIX 安装。
@@ -201,6 +176,7 @@ code --install-extension pta-toolkit-0.1.3.vsix
 | `pta.defaultLanguage` | `C++` | 新建题目默认语言（C++ / C / Python / Java） |
 | `pta.autoCreateSource` | `true` | 是否自动创建源码文件 |
 | `pta.createNotesFile` | `true` | 是否创建 `notes.md` |
+| `pta.codeNotes` | `false` | 在新建源码里放一个 `@pintia note` 块（会随代码一起提交到 PTA）。默认关闭，笔记建议直接写在 Obsidian |
 | `pta.templateDir` | 空 | 自定义模板目录（放自己的 `main.cpp` 等），留空用内置最小模板 |
 | `pta.enableLocalTest` | `false` | 开启后写 `.vscode/tasks.json` 任务并支持本地跑样例 |
 | `pta.pythonPath` | 空 | 指定 Python 解释器，留空自动探测 |
@@ -278,7 +254,8 @@ code --install-extension pta-toolkit-0.1.3.vsix
 
 1. **`notes.md`** —— 主笔记，拉取时生成骨架（YAML frontmatter + 题意 / 思路 / 边界易错点 /
    复杂度 / 代码），之后**永不被覆盖**。放进 Obsidian 库就是一篇可双链的笔记。
-2. **源码里的 `@pintia note` 块** —— 与 pintia 插件兼容，**会随代码一起提交到 PTA**：
+2. **源码里的 `@pintia note` 块**（`pta.codeNotes`，默认关闭）—— 与 pintia 插件兼容，
+   **会随代码一起提交到 PTA**：
 
    ```cpp
    /* @pintia note=start
@@ -406,13 +383,13 @@ PTA 随时可能改接口。所有端点都集中在 `src/ptaApi.js`，真出问
 # 调试：VS Code 打开本目录，按 F5（无需编译）
 # 打包并安装
 python tools/build-vsix.py
-code --install-extension pta-toolkit-0.1.3.vsix --force
+code --install-extension pta-toolkit-0.2.0.vsix --force
 ```
 
 测试：
 
 ```bash
-node test/offline.js             # 离线 349 项：目录命名、不覆盖规则、笔记同步、编译器命令、
+node test/offline.js             # 离线 356 项：目录命名、不覆盖规则、笔记同步、编译器命令、
                                  #   真跑样例、二维码、Set-Cookie、收藏夹、做题状态、侧边栏节点、
                                  #   提交报告、Markdown 渲染、预览面板 HTML、tasks.json 合并、
                                  #   题集「已截止」文案、面板↔根目录的递归回归、公式行内渲染、

@@ -101,6 +101,7 @@ async function main() {
     problem: fixtureProblem,
     language: "C++",
     fileNameFormat: "{label}-{title}",
+    codeNotes: true, // 这里显式开着，专门测 note 块；默认关闭的行为在 33) 里测
     url: "https://pintia.cn/problem-sets/12/exam/problems/type/7?problemSetProblemId=237"
   });
 
@@ -1048,7 +1049,7 @@ async function main() {
   // 抛 RangeError: Maximum call stack size exceeded（打开题目预览、侧边栏刷新都会踩到）。
   // extension.js 和 src/tree.js 都依赖 vscode，这里把 vscode 换成一个最小替身，
   // 再直接 _compile 真实源码，这样能调真函数、断言真行为。
-  function loadWithFakeVscode(relPath, settings, appendSource) {
+  function loadWithFakeVscode(relPath, settings, appendSource, recorder) {
     const Module = require("module");
     class FakeTreeItem {
       constructor(label, collapsibleState) {
@@ -1057,7 +1058,21 @@ async function main() {
       }
     }
     const fakeVscode = {
-      window: { activeTextEditor: undefined, showWarningMessage: async () => undefined },
+      window: {
+        activeTextEditor: undefined,
+        showInformationMessage: async (message) => {
+          if (recorder) {
+            recorder.info.push(message);
+          }
+          return undefined;
+        },
+        showWarningMessage: async (message) => {
+          if (recorder) {
+            recorder.warn.push(message);
+          }
+          return undefined;
+        }
+      },
       workspace: {
         getConfiguration: () => ({
           get: (key, fallback) => (key in settings ? settings[key] : fallback)
@@ -1507,6 +1522,57 @@ async function main() {
   check("题面自己的「输入样例:」原样保留", dupStatement.includes("### 输入样例:"));
   check("顶部仍只有时限与内存一行", dupStatement.includes("> 时间限制 400 ms · 内存限制 65536 KB（64.0 MB）"));
   check("详细信息在文末（难度 8 非 0，会列出来）", dupStatement.indexOf("## 详细信息") > dupStatement.indexOf("### 输出样例:"));
+
+  console.log("\n33) 代码内笔记默认关闭（pta.codeNotes）");
+
+  // 不传 codeNotes —— 默认就该是关的（他的笔记写在 Obsidian，源码里不要那个块）
+  const plainNoNotes = await ws.ensureProblemWorkspace({
+    workspaceRoot: root,
+    problemSetId: "12",
+    problemSetName: "浙大版《C语言程序设计（第3版）》题目集",
+    problem: Object.assign({}, fixtureProblem, { id: "239", label: "4.1", title: "另一道题" }),
+    language: "C++",
+    fileNameFormat: "{label}-{title}"
+  });
+  const bareSource = fs.readFileSync(plainNoNotes.sourcePath, "utf8");
+  check("默认不给源码里塞 @pintia note 块", !bareSource.includes("@pintia note"), bareSource);
+  check("源码就是干净的模板", bareSource.startsWith("#include <iostream>"));
+  check("notes.md 照常创建（那是主笔记，不受影响）", fs.existsSync(plainNoNotes.notesPath));
+
+  const withNotes = await ws.ensureProblemWorkspace({
+    workspaceRoot: root,
+    problemSetId: "12",
+    problemSetName: "浙大版《C语言程序设计（第3版）》题目集",
+    problem: Object.assign({}, fixtureProblem, { id: "240", label: "4.2", title: "再一道题" }),
+    language: "C++",
+    fileNameFormat: "{label}-{title}",
+    codeNotes: true
+  });
+  check(
+    "显式开启 pta.codeNotes 时才补 note 块",
+    fs.readFileSync(withNotes.sourcePath, "utf8").includes("@pintia note=start")
+  );
+
+  // 同步命令在功能关闭时应当提示去开启，而不是同步出一个空的占位
+  const recorder = { info: [], warn: [] };
+  const syncGate = loadWithFakeVscode(
+    "extension.js",
+    { codeNotes: false },
+    "\nmodule.exports.__sync = { commandSyncNotes };\n",
+    recorder
+  ).__sync;
+  let gateError = null;
+  try {
+    await syncGate.commandSyncNotes();
+  } catch (error) {
+    gateError = error;
+  }
+  check("功能关闭时同步命令不报错", gateError === null, gateError && gateError.message);
+  check(
+    "并且提示去设置里开启",
+    (recorder.info[0] || "").includes("代码内笔记功能未开启"),
+    recorder.info
+  );
 
   console.log(`\n${failed === 0 ? "全部通过。" : `${failed} 项失败。`}`);
   console.log(`（临时目录保留在 ${root}，可自行删除）`);

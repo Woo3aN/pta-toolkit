@@ -724,9 +724,10 @@ async function ensureProblemWorkspace(options) {
   const createdSource = !(await fileExists(sourcePath));
   if (createdSource && opts.autoCreateSource !== false) {
     const template = templates.sourceFileContent(language, opts.templateDir);
-    // 用内置模板时补一个空的 @pintia note 块；用你自己的模板文件时不插手
+    // @pintia note 块默认**不加**（pta.codeNotes，默认关）—— 笔记一般直接写在 Obsidian 里。
+    // 开了的话：用内置模板时补一个空的块；用你自己的模板文件时不插手。
     const content =
-      opts.includeNoteBlock === false || template.from
+      opts.codeNotes !== true || opts.includeNoteBlock === false || template.from
         ? template.content
         : notes.ensureNoteBlock(language, template.content);
     await fs.promises.writeFile(sourcePath, content, "utf8");

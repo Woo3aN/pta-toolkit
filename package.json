@@ -2,7 +2,7 @@
   "name": "pta-toolkit",
   "displayName": "PTA Toolkit for VS Code",
   "description": "把拼题A（PTA）题集的题目、输入输出、样例拉取到本地：每题一个文件夹，可直接写代码、跑样例、整理笔记",
-  "version": "0.1.3",
+  "version": "0.2.0",
   "publisher": "woo3an",
   "license": "MIT",
   "engines": {
@@ -472,6 +472,11 @@
           "type": "boolean",
           "default": true,
           "description": "每道题额外创建一个 notes.md 用来写笔记。已存在的笔记永远不会被覆盖。"
+        },
+        "pta.codeNotes": {
+          "type": "boolean",
+          "default": false,
+          "markdownDescription": "在新建的源码里放一个空的 `@pintia note` 块（会随代码一起提交到 PTA），并提供「把源码里的笔记同步到 notes.md」命令。**默认关闭** —— 笔记建议直接写在 Obsidian 里。"
         },
         "pta.templateDir": {
           "type": "string",
