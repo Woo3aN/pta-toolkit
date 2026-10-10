@@ -1980,8 +1980,17 @@ async function buildPreviewContext(ref, options) {
   const problemType = detail ? detail.type : metadata.problemType;
   const language = metadata.language || settings.language;
 
+  // 面板的「详细信息」要和 problem.md 里的对齐，所以这里得把同一批字段凑齐
+  const fetchedAtDate = metadata.updatedAt ? new Date(metadata.updatedAt) : null;
   const meta = {
     problemTypeName: metadata.problemTypeName || api.problemTypeName(problemType),
+    problemSetName: ref.problemSetName || metadata.problemSetName || "",
+    problemSetId: String(ref.problemSetId),
+    author: (detail && detail.author) || metadata.author || "",
+    url: metadata.url || api.buildProblemUrl(ref.problemSetId, ref.problemId, problemType),
+    // 「本地抓取」只有已经拉到本地才有得说；还没创建代码时这一条就不显示
+    fetchedAt:
+      fetchedAtDate && !Number.isNaN(fetchedAtDate.getTime()) ? ws.timestampForFile(fetchedAtDate) : "",
     score:
       metadata.score === undefined || metadata.score === null
         ? detail

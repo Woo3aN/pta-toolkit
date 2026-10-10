@@ -2,7 +2,7 @@
 
 [![VS Code](https://img.shields.io/badge/VS%20Code-%5E1.88.0-007ACC?logo=visualstudiocode&logoColor=white)](https://code.visualstudio.com/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
-[![Version](https://img.shields.io/badge/version-0.1.4-blue.svg)](CHANGELOG.md)
+[![Version](https://img.shields.io/badge/version-0.1.5-blue.svg)](CHANGELOG.md)
 [![Dependencies](https://img.shields.io/badge/dependencies-0-brightgreen.svg)](#实现说明)
 
 > 把拼题A（PTA / pintia.cn）的题目拉进 VS Code：**每题一个文件夹**，
@@ -67,7 +67,7 @@
 ## 安装
 
 ```bash
-code --install-extension pta-toolkit-0.1.4.vsix
+code --install-extension pta-toolkit-0.1.5.vsix
 ```
 
 也可以在 VS Code 扩展面板右上角 `...` → 从 VSIX 安装。
@@ -108,7 +108,12 @@ code --install-extension pta-toolkit-0.1.4.vsix
 ### 题目预览面板
 
 在侧边栏点一道题，就会在编辑器旁开一个面板：渲染好的题面（Markdown 表格、围栏代码块、
-`$…$` / `$$…$$` 公式）、题目信息徽章，以及一排操作按钮。
+`$…$` / `$$…$$` 公式）、题目信息，以及一排操作按钮。
+
+题目信息与生成到本地的 `problem.md` 是**同一套布局**（共用 `src/problemInfo.js` 出文案）：
+顶部一行是时限与内存，末尾「详细信息」里是题集 / 题型 / 分值 / 难度 / 作者 / 在线地址 / 本地抓取。
+所以**还没创建代码时，看到的就是创建之后那份题面里的同一批信息**。徽章则只留本地状态
+（做题状态 / 语言 / 源码文件）。
 
 ```
 [创建代码]  ← 本地没有代码时显示这个
@@ -403,17 +408,17 @@ PTA 随时可能改接口。所有端点都集中在 `src/ptaApi.js`，真出问
 # 调试：VS Code 打开本目录，按 F5（无需编译）
 # 打包并安装
 python tools/build-vsix.py
-code --install-extension pta-toolkit-0.1.4.vsix --force
+code --install-extension pta-toolkit-0.1.5.vsix --force
 ```
 
 测试：
 
 ```bash
-node test/offline.js             # 离线 311 项：目录命名、不覆盖规则、笔记同步、编译器命令、
+node test/offline.js             # 离线 320 项：目录命名、不覆盖规则、笔记同步、编译器命令、
                                  #   真跑样例、二维码、Set-Cookie、收藏夹、做题状态、侧边栏节点、
                                  #   提交报告、Markdown 渲染、预览面板 HTML、tasks.json 合并、
                                  #   题集「已截止」文案、面板↔根目录的递归回归、公式行内渲染、
-                                 #   内置模板与题集权限提示、题面信息安排、面板字号
+                                 #   内置模板与题集权限提示、题面信息安排、面板字号、面板↔题面信息一致
 node test/e2e-panel.js 12 2      # 实网：用真实题面渲染预览面板
 node test/e2e-auth.js            # 实网：登录链路的端点契约与错误语义（无需账号）
 node test/e2e-public.js 12       # 实网：题面与样例确实能拉到（无需登录）

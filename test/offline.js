@@ -20,6 +20,7 @@ const markdown = require("../src/markdown");
 const problemPanel = require("../src/problemPanel");
 const taskFile = require("../src/taskFile");
 const treeModel = require("../src/treeModel");
+const problemInfo = require("../src/problemInfo");
 
 let failed = 0;
 
@@ -788,7 +789,7 @@ async function main() {
     htmlFresh.includes("在一行中输出短句。") && (htmlFresh.match(/<h1>/g) || []).length === 1,
     (htmlFresh.match(/<h1>/g) || []).length
   );
-  check("徽章含时限与内存", htmlFresh.includes("400 ms") && htmlFresh.includes("65536 KB"));
+  check("面板前面显示时限与内存（和题面同一份文案）", htmlFresh.includes("400 ms") && htmlFresh.includes("65536 KB"));
   check("未创建时不显示运行样例", !htmlFresh.includes('data-command="runSamples"'));
   check("面板带 MathJax（含 CSP 许可）", htmlFresh.includes("cdn.jsdelivr.net/npm/mathjax") && htmlFresh.includes("script-src 'unsafe-inline' https://cdn.jsdelivr.net"));
   check("面板脚本用 acquireVsCodeApi", htmlFresh.includes("acquireVsCodeApi"));
@@ -1173,6 +1174,65 @@ async function main() {
   check("正文标题改用 em，跟着基准一起放大", htmlFresh.includes(".statement h2 { font-size: 1.2em;"));
   check("面板标题改用 em", htmlFresh.includes("h1 { font-size: 1.5em;"));
   check("样式里不再有写死的 11px 小字号", htmlFresh.indexOf("font-size: 11px") < 0);
+
+  console.log("\n30) 创建代码之前 / 之后看题目的界面一致");
+
+  // 同一批信息要在两处显示：本地 problem.md（创建之后）与预览面板（创建之前）。
+  // 这里直接从两边各自解析出字段列表来比对，防止哪天只改了一边。
+  const detailSection = statement.slice(statement.indexOf("## 详细信息"));
+  const statementLabels = (detailSection.match(/^- ([^：]+)：/gm) || []).map((line) =>
+    line.replace(/^- /, "").replace("：", "")
+  );
+
+  const parityMeta = {
+    problemTypeName: "PROGRAMMING",
+    problemSetName: "浙大版《C语言程序设计（第3版）》题目集",
+    problemSetId: "12",
+    author: "admin",
+    url: "https://pintia.cn/problem-sets/12/exam/problems/type/7?problemSetProblemId=237",
+    fetchedAt: "2026-10-10 09:07",
+    score: 15,
+    difficulty: 0,
+    timeLimit: 400,
+    memoryLimit: 65536
+  };
+  const parityHtml = problemPanel.buildPanelHtml({
+    problem: { label: "练习2-1", title: "Programming in C is fun!" },
+    statement: "本题要求编写程序。",
+    meta: parityMeta,
+    workspace: { hasWorkspace: false },
+    root: ""
+  });
+  const panelLabels = [...parityHtml.matchAll(/<span class="detail-key">([^<]*)<\/span>/g)].map((m) => m[1]);
+
+  check("题面文件里解析得出「详细信息」字段", statementLabels.length > 0, statementLabels);
+  check("面板里也解析得出「详细信息」字段", panelLabels.length > 0, panelLabels);
+  check(
+    "两处的字段与顺序完全一致",
+    statementLabels.join("|") === panelLabels.join("|"),
+    `题面=[${statementLabels.join(",")}] 面板=[${panelLabels.join(",")}]`
+  );
+  check(
+    "面板用同一份 limitsText",
+    problemInfo.limitsText(parityMeta) === "时间限制 400 ms · 内存限制 65536 KB（64.0 MB）",
+    problemInfo.limitsText(parityMeta)
+  );
+  check(
+    "面板前面就有时限与内存（不用先创建代码）",
+    parityHtml.indexOf("时间限制") > 0 &&
+      parityHtml.indexOf("时间限制") < parityHtml.indexOf('class="statement"')
+  );
+  check(
+    "面板的「详细信息」排在题面之后",
+    parityHtml.indexOf('class="details"') > parityHtml.indexOf('class="statement"')
+  );
+  check("面板详细信息里带上了在线地址", parityHtml.includes("pintia.cn/problem-sets/12"));
+  check("难度为 0 时不占一行（两处都不列）", statementLabels.indexOf("难度") < 0 && panelLabels.indexOf("难度") < 0);
+  check(
+    "字段构成符合约定",
+    statementLabels.join("|") === "题集|题型|分值|作者 / 来源|在线地址|本地抓取",
+    statementLabels
+  );
 
   console.log(`\n${failed === 0 ? "全部通过。" : `${failed} 项失败。`}`);
   console.log(`（临时目录保留在 ${root}，可自行删除）`);

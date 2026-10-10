@@ -22,6 +22,7 @@ const fs = require("fs");
 const path = require("path");
 const templates = require("./templates");
 const notes = require("./notes");
+const problemInfo = require("./problemInfo");
 
 const METADATA_FILE_NAME = ".pta.json";
 const PROBLEM_SET_DIR_NAME = "problem-sets";
@@ -218,43 +219,35 @@ function codeBlock(text) {
   return `${fence}text\n${body.replace(/\s+$/, "")}\n${fence}`;
 }
 
-function formatLimit(ms) {
-  if (!ms && ms !== 0) {
-    return "未提供";
-  }
-  if (ms >= 1000) {
-    return `${ms} ms（${(ms / 1000).toFixed(1)} s）`;
-  }
-  return `${ms} ms`;
-}
-
-function formatMemory(kb) {
-  if (!kb && kb !== 0) {
-    return "未提供";
-  }
-  return `${kb} KB（${(kb / 1024).toFixed(1)} MB）`;
-}
-
 function buildProblemMarkdown(problem, context) {
   const ctx = context || {};
   const samples = ctx.samples || [];
   const config = ctx.problemConfig || {};
   const lines = [];
 
+  // 同一批元信息在「预览面板」里也要显示，统一由 problemInfo 出文案，
+  // 保证创建代码之前 / 之后看到的是同一套东西。
+  const info = {
+    timeLimit: config.timeLimit,
+    memoryLimit: config.memoryLimit,
+    problemSetName: ctx.problemSetName,
+    problemSetId: ctx.problemSetId,
+    problemTypeName: ctx.problemTypeName || problem.type || "未知",
+    score: problem.score,
+    difficulty: problem.difficulty,
+    author: problem.author,
+    url: ctx.url,
+    fetchedAt: timestampForFile()
+  };
+
   lines.push(`# ${problem.label ? problem.label + " " : ""}${problem.title || ""}`.trim());
   lines.push("");
   // 顶部只留「读题真正要用」的两条：时限与内存。
-  // 题集 / 题型 / 分值 / 作者 / 在线地址 / 抓取时间这些都挪到文件末尾的「详细信息」，
+  // 题集 / 题型 / 分值 / 作者 / 在线地址 / 抓取时间都收在文件末尾的「详细信息」，
   // 免得每打开一道题先翻一屏元信息才看到正文。
-  const limits = [];
-  if (config.timeLimit) {
-    limits.push(`时间限制 ${formatLimit(config.timeLimit)}`);
-  }
-  if (config.memoryLimit) {
-    limits.push(`内存限制 ${formatMemory(config.memoryLimit)}`);
-  }
-  if (limits.length) {
-    lines.push(`> ${limits.join(" · ")}`);
+  const limitsText = problemInfo.limitsText(info);
+  if (limitsText) {
+    lines.push(`> ${limitsText}`);
     lines.push("");
   }
   lines.push("---");
@@ -300,23 +293,13 @@ function buildProblemMarkdown(problem, context) {
   }
 
   // 详细信息：不挡着读题，统一收在文件最后
-  lines.push("## 详细信息");
-  lines.push("");
-  if (ctx.problemSetName) {
-    lines.push(`- 题集：${ctx.problemSetName}（\`${ctx.problemSetId}\`）`);
+  const details = problemInfo.detailItems(info);
+  if (details.length) {
+    lines.push("## 详细信息");
+    lines.push("");
+    details.forEach((item) => lines.push(`- ${item.label}：${item.value}`));
+    lines.push("");
   }
-  lines.push(`- 题型：${ctx.problemTypeName || problem.type || "未知"}`);
-  if (problem.score !== undefined && problem.score !== null) {
-    lines.push(`- 分值：${problem.score}`);
-  }
-  if (problem.author) {
-    lines.push(`- 作者 / 来源：${problem.author}`);
-  }
-  if (ctx.url) {
-    lines.push(`- 在线地址：${ctx.url}`);
-  }
-  lines.push(`- 本地抓取：${timestampForFile()}`);
-  lines.push("");
 
   lines.push("---");
   lines.push("");

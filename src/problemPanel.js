@@ -12,6 +12,7 @@
 
 const path = require("path");
 const markdown = require("./markdown");
+const problemInfo = require("./problemInfo");
 
 const { escapeHtml, renderMarkdown } = markdown;
 
@@ -102,6 +103,12 @@ const BASE_STYLE = `
     border-radius: 999px; padding: 4px 11px; font-size: .8em;
   }
   .badge-key { opacity: .7; }
+  /* 前面那行「时间限制 400 ms · 内存限制 65536 KB（64.0 MB）」——
+     和 problem.md 顶部那行同一份文案（problemInfo.limitsText）。 */
+  .limits { margin: -2px 0 14px; }
+  .limits .limit { white-space: nowrap; }
+  .limits .limit-key { color: var(--vscode-descriptionForeground); margin-right: 6px; }
+  .limits .limit-sep { color: var(--vscode-descriptionForeground); margin: 0 10px; }
   .actions { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 18px; }
   .action {
     display: inline-flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px;
@@ -163,8 +170,17 @@ const BASE_STYLE = `
     background: var(--vscode-textCodeBlock-background); border-radius: 4px; padding: 0 4px;
   }
   .math-block { display: block; padding: 10px; margin: 10px 0; overflow-x: auto; }
+  /* 末尾的「详细信息」—— 和 problem.md 里那个小节同一批字段、同一个顺序 */
+  .details {
+    margin-top: 22px; padding-top: 14px; border-top: 1px solid var(--vscode-panel-border);
+    font-size: .88em; color: var(--vscode-descriptionForeground);
+  }
+  .details-title { font-weight: 500; color: var(--vscode-foreground); margin-bottom: 8px; }
+  .detail-row { display: flex; gap: 10px; padding: 2px 0; }
+  .detail-key { flex: 0 0 auto; min-width: 5.5em; opacity: .85; }
+  .detail-value { flex: 1 1 auto; min-width: 0; word-break: break-all; }
   .hint { color: var(--vscode-descriptionForeground); }
-  .footer { margin-top: 20px; font-size: .85em; color: var(--vscode-descriptionForeground); }
+  .footer { margin-top: 14px; font-size: .85em; color: var(--vscode-descriptionForeground); }
 `;
 
 /**
@@ -185,19 +201,37 @@ function buildPanelHtml(context) {
   const title = `${problem.label || ""} ${problem.title || ""}`.trim() || "题目";
   const hasWorkspace = Boolean(workspace.hasWorkspace);
 
+  // 题目本身的信息（时限 / 内存 / 详细信息）统一由 problemInfo 出文案，
+  // 和生成到本地的 problem.md 完全一致 —— 创建代码之前和之后看到的是同一套。
+  const limitItems = problemInfo.limitItems(meta);
+  const limitsLine = limitItems.length
+    ? `<div class="limits">${limitItems
+        .map(
+          (item) =>
+            `<span class="limit"><span class="limit-key">${escapeHtml(item.label)}</span>${escapeHtml(item.value)}</span>`
+        )
+        .join('<span class="limit-sep">·</span>')}</div>`
+    : "";
+
+  // 余下的徽章只表示「本地状态」；题目自身的元信息已经进了上面那行和下面的详细信息
   const badges = [
-    badge("题号", problem.label),
-    badge("类型", meta.problemTypeName),
-    badge("分值", meta.score),
-    badge("难度", meta.difficulty),
-    badge("时限", meta.timeLimit ? `${meta.timeLimit} ms` : ""),
-    badge("内存", meta.memoryLimit ? `${meta.memoryLimit} KB` : ""),
     badge("状态", workspace.answerStatus),
     badge("语言", hasWorkspace ? workspace.language : ""),
     badge("本地", hasWorkspace ? workspace.sourceFile : "")
   ]
     .filter(Boolean)
     .join("");
+
+  const details = problemInfo.detailItems(meta);
+  const detailsBlock = details.length
+    ? `<div class="details"><div class="details-title">详细信息</div>${details
+        .map(
+          (item) =>
+            `<div class="detail-row"><span class="detail-key">${escapeHtml(item.label)}</span>` +
+            `<span class="detail-value">${escapeHtml(item.value)}</span></div>`
+        )
+        .join("")}</div>`
+    : "";
 
   const actions = [];
   actions.push(
@@ -253,10 +287,12 @@ function buildPanelHtml(context) {
 <body>
   <div class="wrap">
     <h1>${escapeHtml(title)}</h1>
-    <div class="badges">${badges}</div>
+    ${limitsLine}
+    ${badges ? `<div class="badges">${badges}</div>` : ""}
     <div class="actions">${actions.join("")}</div>
     ${rootLine}
     <div class="statement">${statement}</div>
+    ${detailsBlock}
     ${localLine}
   </div>
   <script>
