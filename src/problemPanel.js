@@ -150,12 +150,16 @@ const BASE_STYLE = `
   .statement code {
     font-family: var(--vscode-editor-font-family); font-size: .92em;
     background: var(--vscode-textCodeBlock-background); padding: 1px 5px; border-radius: 4px;
+    /* PTA 网页上的行内代码是红的（Bootstrap 那套配色），
+       「Error: Ca != Rb」这种关键输出不标红的话，在面板里就跟普通文字没区别。 */
+    color: var(--vscode-errorForeground);
   }
   .statement pre.code {
     background: var(--vscode-textCodeBlock-background); padding: 13px 15px;
     border-radius: 8px; overflow: auto;
   }
-  .statement pre.code code { background: none; padding: 0; }
+  /* 代码块不跟着标红 —— 网页上红的只有行内代码 */
+  .statement pre.code code { background: none; padding: 0; color: inherit; }
   .statement table { border-collapse: collapse; margin: 12px 0; width: 100%; }
   .statement th, .statement td { border: 1px solid var(--vscode-panel-border); padding: 7px 11px; text-align: left; }
   .statement th { background: var(--vscode-textCodeBlock-background); font-weight: 500; }

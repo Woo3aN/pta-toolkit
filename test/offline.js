@@ -1436,6 +1436,11 @@ async function main() {
   check("面板里不再出现文件自带的「题集：」", panelHtml.indexOf("题集：") < 0);
   check("面板自己渲染了时限与内存", panelHtml.includes("时间限制") && panelHtml.includes("内存限制"));
   check("面板的详细信息来自 problemInfo", panelHtml.includes('class="details"') && panelHtml.includes('class="limits"'));
+  check(
+    "面板的行内代码标红（跟 PTA 网页一致），代码块不跟",
+    panelHtml.includes("color: var(--vscode-errorForeground)") &&
+      /pre\.code code \{ background: none; padding: 0; color: inherit; \}/.test(panelHtml)
+  );
   check("题面正文还在", panelHtml.includes("求最长对称子串"));
 
   // 「刷新题面」按钮：必须真的回 PTA 重拉，而不是把面板按本地文件重画一遍
