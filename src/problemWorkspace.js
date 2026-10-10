@@ -23,6 +23,7 @@ const path = require("path");
 const templates = require("./templates");
 const notes = require("./notes");
 const problemInfo = require("./problemInfo");
+const markdown = require("./markdown");
 
 const METADATA_FILE_NAME = ".pta.json";
 const PROBLEM_SET_DIR_NAME = "problem-sets";
@@ -127,7 +128,9 @@ function htmlToMarkdown(html) {
   let text = String(html || "");
   const images = [];
   text = text.replace(/<img[^>]*?src=["']([^"']+)["'][^>]*>/gi, (_match, src) => {
-    const url = src.startsWith("//") ? `https:${src}` : src;
+    // 图片写的是 ~/xxx.jpg（PTA 的相对图床路径），直接生成绝对地址，
+    // 这样 problem.md 在 VS Code 的 markdown 预览里也能正常显示
+    const url = markdown.resolveImageSrc(src);
     images.push(url);
     return `\n\n![](${url})\n\n`;
   });

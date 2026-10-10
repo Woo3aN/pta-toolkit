@@ -23,13 +23,27 @@ function escapeHtml(text) {
     .replace(/"/g, "&quot;");
 }
 
+/** PTA 题面里图片写的是 ~/xxx.jpg，网页端会换成自家图床；这里做同样的事，否则就是裂图。 */
+const PTA_IMAGE_HOST = "https://images.ptausercontent.com";
+
+function resolveImageSrc(src) {
+  const value = String(src === null || src === undefined ? "" : src).trim();
+  if (value.indexOf("~/") === 0) {
+    return `${PTA_IMAGE_HOST}/${value.slice(2)}`;
+  }
+  if (value.indexOf("//") === 0) {
+    return `https:${value}`;
+  }
+  return value;
+}
+
 /** 行内标记。入参必须是**已转义**的文本。 */
 function inline(text) {
   let out = String(text || "");
   out = out.replace(/`([^`]+)`/g, "<code>$1</code>");
   out = out.replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>");
   out = out.replace(/(^|[^*\w])\*([^*\n]+)\*(?!\*)/g, "$1<em>$2</em>");
-  out = out.replace(/!\[([^\]]*)\]\(([^)\s]+)(?:\s+&quot;[^)]*&quot;)?\)/g, '<img alt="$1" src="$2">');
+  out = out.replace(/!\[([^\]]*)\]\(([^)\s]+)(?:\s+&quot;[^)]*&quot;)?\)/g, (_match, alt, src) => `<img alt="${alt}" src="${resolveImageSrc(src)}">`);
   out = out.replace(/\[([^\]]+)\]\(([^)\s]+)(?:\s+&quot;[^)]*&quot;)?\)/g, '<a href="$2">$1</a>');
   out = out.replace(/&lt;(https?:\/\/[^\s&]+)&gt;/g, '<a href="$1">$1</a>');
   return out;
@@ -237,6 +251,7 @@ function renderMarkdown(markdown) {
 
 module.exports = {
   escapeHtml,
+  resolveImageSrc,
   renderMarkdown,
   inline
 };

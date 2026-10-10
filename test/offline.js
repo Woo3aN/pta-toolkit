@@ -1574,6 +1574,36 @@ async function main() {
     recorder.info
   );
 
+  console.log("\n34) 题面里的图片（~/xxx.jpg → PTA 图床）");
+
+  // PTA 题面的图片写的是 ~/xxx.jpg（相对图床路径），网页端会换成自家图床；
+  // 不做这一步，面板里就是一张裂图。
+  check(
+    "行内图片的 ~ 路径换成图床绝对地址",
+    markdown
+      .renderMarkdown("![snap650.jpg](~/05ffd584.jpg)")
+      .includes('<img alt="snap650.jpg" src="https://images.ptausercontent.com/05ffd584.jpg">')
+  );
+  check("协议相对地址补 https", markdown.resolveImageSrc("//x/y.png") === "https://x/y.png");
+  check("绝对地址原样保留", markdown.resolveImageSrc("https://a/b.png") === "https://a/b.png");
+  check("空值不炸", markdown.resolveImageSrc("") === "" && markdown.resolveImageSrc(null) === "");
+  check(
+    "htmlToMarkdown 生成的 problem.md 也是绝对地址（VS Code 的 markdown 预览能显示）",
+    ws.htmlToMarkdown('<p><img src="~/a.jpg"></p>').includes("![](https://images.ptausercontent.com/a.jpg)")
+  );
+  // 真实题面（3.4 KMP）里的那张图
+  const kmpLine = "![snap650.jpg](~/05ffd584-7ab1-46eb-b717-79b180eac834.jpg)";
+  check(
+    "真实题面：snap650.jpg 解析到图床",
+    markdown
+      .renderMarkdown(kmpLine)
+      .includes("https://images.ptausercontent.com/05ffd584-7ab1-46eb-b717-79b180eac834.jpg")
+  );
+  check(
+    "CSP 允许加载 https 图片",
+    /img-src [^;]*https:/.test(problemPanel.buildPanelHtml({ statement: "x" }))
+  );
+
   console.log(`\n${failed === 0 ? "全部通过。" : `${failed} 项失败。`}`);
   console.log(`（临时目录保留在 ${root}，可自行删除）`);
   if (failed) {
