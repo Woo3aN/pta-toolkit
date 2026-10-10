@@ -7,6 +7,22 @@
 
 ## [Unreleased]
 
+## [0.1.2] - 2026-10-10
+
+### 修复
+
+- **修掉「打开题目预览失败：Maximum call stack size exceeded」**。
+  `peekRoot` → `resolveCurrentProblem` → `resolveProblemFromPanel` → `peekRoot` 构成相互递归，
+  在「预览面板里有题目」且「没设 `pta.workspaceRoot`」时无限递归下去。
+  刚登录、还没建过代码的用户一打开题目预览就会踩到（侧边栏刷新走的也是 `peekRoot`，同样中招）。
+  现在 `resolveCurrentProblem` / `peekRoot` 带 `skipPanel` 参数把这条环路打断。
+  新增回归测试：把 `vscode` 换成最小替身直接调真函数，**去掉守卫就会复现同样的 RangeError**。
+- **已截止的题集显示「已截止」**，不再显示成「未开始 · 截止 2026-10-04」。
+  PTA 对已经过期的题集有时仍然回 `PENDING`，光看 status 会自相矛盾。
+  现在只要 `endAt` 已过去（或状态是 `END`）就只写「已截止」，也不再挂一个多余的日期。
+- **「选择题集」下拉框不再漏出裸英文状态**（原来会显示成 `PENDING · 截止 …`），
+  改为复用侧边栏那一套文案。
+
 ## [0.1.1] - 2026-10-09
 
 ### 修复

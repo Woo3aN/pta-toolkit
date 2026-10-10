@@ -18,6 +18,7 @@ const { PtaCodeLensProvider } = require("./src/codeLens");
 const { WechatLoginPanel } = require("./src/loginPanel");
 const { ProblemPanel, buildPanelHtml, renderPanelSkeleton } = require("./src/problemPanel");
 const { PtaTreeDataProvider, VIEW_ID: TREE_VIEW_ID } = require("./src/tree");
+const treeModel = require("./src/treeModel");
 
 const SECRET_COOKIE = "pta.session.cookie";
 const STATE_USER = "pta.user";
@@ -492,7 +493,12 @@ async function pullProblemSet(problemSetId, problemSetName, options) {
 /* 定位当前题目                                                        */
 /* ------------------------------------------------------------------ */
 
-async function resolveCurrentProblem() {
+/**
+ * 当前的题目：优先看编辑器里打开的文件，其次回退到预览面板里的题目。
+ * @param {object} [options] { skipPanel: 不要回退到预览面板 }
+ */
+async function resolveCurrentProblem(options) {
+  const opts = options || {};
   const editor = vscode.window.activeTextEditor;
   if (editor && editor.document.uri.scheme === "file") {
     const found = await ws.findMetadataUpward(editor.document.uri.fsPath);
@@ -506,6 +512,14 @@ async function resolveCurrentProblem() {
     }
   }
   // 编辑器没打开题目文件（或焦点在预览面板上）时，回退到面板当前题目。
+  //
+  // skipPanel 是给 peekRoot 用的：面板里的题目要反查本地目录时又会调 peekRoot 拿根目录，
+  // 「预览面板打开着」+「没设 pta.workspaceRoot」两者同时成立就会无限递归下去，
+  // 最终抛 RangeError: Maximum call stack size exceeded（侧边栏刷新也会踩到，
+  // 因为树里拿根目录走的也是 peekRoot）。到这里就直接认输，别绕回去。
+  if (opts.skipPanel === true) {
+    return null;
+  }
   return resolveProblemFromPanel();
 }
 
@@ -515,7 +529,9 @@ async function resolveProblemFromPanel() {
   if (!ref || !ref.problemSetId || !ref.problemId) {
     return null;
   }
-  const root = (await peekRoot()) || "";
+  // 这里必须带 skipPanel：我们本身就是「面板里的题目」，
+  // 再让 peekRoot 回去问面板就成了死循环（见 resolveCurrentProblem 的注释）。
+  const root = (await peekRoot({ skipPanel: true })) || "";
   if (!root) {
     return null;
   }
@@ -901,9 +917,9 @@ async function pickMyProblemSet(cookie, options) {
   const picks = await vscode.window.showQuickPick(
     problemSets.map((item) => ({
       label: item.name || item.id,
-      description: [item.status, item.endAt ? `截止 ${String(item.endAt).slice(0, 16).replace("T", " ")}` : ""]
-        .filter(Boolean)
-        .join(" · "),
+      // 和侧边栏用同一套文案：已截止的题集只写「已截止」，
+      // 不再把 PTA 的裸英文状态（PENDING 之类）漏到界面上。
+      description: treeModel.problemSetDescription(item),
       detail: `题集 ID：${item.id}${item.organizationName ? ` · ${item.organizationName}` : ""}`,
       value: item
     })),
@@ -1440,13 +1456,17 @@ async function commandOpenProblemSetIndex() {
 /* 命令：收藏 / 搜索 / 做题状态 / 签到                                  */
 /* ------------------------------------------------------------------ */
 
-/** 只看已知信息推断工作区根目录，不弹框（侧边栏用） */
-async function peekRoot() {
+/**
+ * 只看已知信息推断工作区根目录，不弹框（侧边栏用）。
+ * @param {object} [options] { skipPanel: 不要回头去问预览面板 }
+ */
+async function peekRoot(options) {
+  const opts = options || {};
   const settings = getSettings();
   if (settings.workspaceRoot) {
     return settings.workspaceRoot;
   }
-  const current = await resolveCurrentProblem();
+  const current = await resolveCurrentProblem({ skipPanel: opts.skipPanel === true });
   if (current) {
     const derived = deriveRootFromProblemDir(current.problemDir);
     if (derived) {

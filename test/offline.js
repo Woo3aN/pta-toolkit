@@ -19,6 +19,7 @@ const library = require("../src/library");
 const markdown = require("../src/markdown");
 const problemPanel = require("../src/problemPanel");
 const taskFile = require("../src/taskFile");
+const treeModel = require("../src/treeModel");
 
 let failed = 0;
 
@@ -889,6 +890,109 @@ async function main() {
       fs.readFileSync(path.join(__dirname, "..", "extension.js"), "utf8")
     )
   );
+
+  console.log("\n26) 题集「已截止」文案");
+  const endedBefore = new Date(Date.now() - 86400000).toISOString();
+  const endedAfter = new Date(Date.now() + 86400000).toISOString();
+  check(
+    "endAt 已过去的题集写「已截止」",
+    treeModel.problemSetDescription({ status: "PENDING", endAt: endedBefore }) === "已截止",
+    treeModel.problemSetDescription({ status: "PENDING", endAt: endedBefore })
+  );
+  check(
+    "状态是 END 时也写「已截止」，不再挂日期",
+    treeModel.problemSetDescription({ status: "END", endAt: endedAfter }) === "已截止"
+  );
+  check(
+    "未截止的题集照旧：状态 · 截止 时间",
+    treeModel.problemSetDescription({ status: "PROCESSING", endAt: endedAfter }).indexOf("进行中") === 0
+  );
+  check(
+    "未截止的题集仍带截止时间",
+    treeModel.problemSetDescription({ status: "PROCESSING", endAt: endedAfter }).includes("截止")
+  );
+  check("endAt 解析不了时不误判成已截止", treeModel.hasEnded("不是时间") === false);
+  check("没有 endAt 时不当已截止", treeModel.hasEnded("") === false);
+  check(
+    "hasEnded 支持注入当前时间",
+    treeModel.hasEnded("2026-10-04T16:00:00Z", Date.parse("2026-10-05T00:00:00Z")) === true
+  );
+  check("状态 END 的中文是「已截止」", treeModel.problemSetStatusText("END") === "已截止");
+  check(
+    "选择题集的下拉框复用同一套文案（不再漏出裸英文状态）",
+    /description:\s*treeModel\.problemSetDescription\(/.test(
+      fs.readFileSync(path.join(__dirname, "..", "extension.js"), "utf8")
+    )
+  );
+
+  console.log("\n27) 预览面板 ↔ 工作区根目录 的相互递归（防栈溢出回归）");
+  // 背景：peekRoot → resolveCurrentProblem → resolveProblemFromPanel → peekRoot。
+  // 「预览面板里有题目」+「没设 pta.workspaceRoot」同时成立就无限递归，
+  // 抛 RangeError: Maximum call stack size exceeded（打开题目预览、侧边栏刷新都会踩到）。
+  // extension.js 依赖 vscode，这里把 vscode 换成一个最小替身，直接跑真函数。
+  function loadExtensionInternals(settings) {
+    const Module = require("module");
+    const fakeVscode = {
+      window: { activeTextEditor: undefined, showWarningMessage: async () => undefined },
+      workspace: {
+        getConfiguration: () => ({
+          get: (key, fallback) => (key in settings ? settings[key] : fallback)
+        })
+      }
+    };
+    const original = Module._load;
+    Module._load = function (request) {
+      if (request === "vscode") {
+        return fakeVscode;
+      }
+      return original.apply(this, arguments);
+    };
+    try {
+      const extPath = path.join(__dirname, "..", "extension.js");
+      const source =
+        fs.readFileSync(extPath, "utf8") +
+        "\nmodule.exports.__test = { peekRoot, resolveCurrentProblem, resolveProblemFromPanel, setPanelRef: (r) => { panelProblemRef = r; } };\n";
+      const mod = new Module(extPath, null);
+      mod.filename = extPath;
+      mod.paths = Module._nodeModulePaths(path.dirname(extPath));
+      mod._compile(source, extPath);
+      return mod.exports.__test;
+    } finally {
+      Module._load = original;
+    }
+  }
+
+  const panelRef = { problemSetId: "12", problemId: "237" };
+
+  const noRoot = loadExtensionInternals({ workspaceRoot: "" });
+  noRoot.setPanelRef(panelRef);
+  let peekError = null;
+  let peekValue = null;
+  try {
+    peekValue = await noRoot.peekRoot();
+  } catch (error) {
+    peekError = error;
+  }
+  check("面板有题目 + 未设根目录：peekRoot 不再炸栈", peekError === null, peekError && peekError.message);
+  check("这种情况返回空串（交给上层弹框选目录）", peekValue === "");
+
+  let panelError = null;
+  let panelValue = "unset";
+  try {
+    panelValue = await noRoot.resolveProblemFromPanel();
+  } catch (error) {
+    panelError = error;
+  }
+  check("resolveProblemFromPanel 同样不再炸栈", panelError === null, panelError && panelError.message);
+  check("没设根目录时它返回 null", panelValue === null);
+
+  const withRoot = loadExtensionInternals({ workspaceRoot: "R:/pta" });
+  withRoot.setPanelRef(panelRef);
+  check("设了根目录时 peekRoot 照常返回那个目录", (await withRoot.peekRoot()) === "R:/pta");
+
+  const noPanel = loadExtensionInternals({ workspaceRoot: "" });
+  noPanel.setPanelRef(null);
+  check("面板里没题目时依然返回空串（不会误伤正常路径）", (await noPanel.peekRoot()) === "");
 
   console.log(`\n${failed === 0 ? "全部通过。" : `${failed} 项失败。`}`);
   console.log(`（临时目录保留在 ${root}，可自行删除）`);

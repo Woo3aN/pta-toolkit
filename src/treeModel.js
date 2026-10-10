@@ -11,8 +11,11 @@ const SET_STATUS_TEXT = {
   PENDING: "未开始",
   READY: "准备答题中",
   PROCESSING: "进行中",
-  END: "已结束"
+  END: "已截止"
 };
+
+/** 「已截止」的统一说法：题集状态是 END，或 endAt 已经过去。 */
+const ENDED_TEXT = "已截止";
 
 const SET_TYPE_ICON = {
   BOOK: "book",
@@ -59,9 +62,30 @@ function formatDeadline(endAt) {
   return `截止 ${String(endAt).slice(0, 16).replace("T", " ")}`;
 }
 
+/** endAt 是否已经过去。解析不了的一律当「没过」，免得把题集误标成已截止。 */
+function hasEnded(endAt, now) {
+  if (!endAt) {
+    return false;
+  }
+  const at = Date.parse(endAt);
+  if (!Number.isFinite(at)) {
+    return false;
+  }
+  const current = now === undefined || now === null ? Date.now() : now;
+  return at <= current;
+}
+
 /** 题集节点右侧的灰字 */
-function problemSetDescription(item) {
+function problemSetDescription(item, options) {
   const source = item || {};
+  const opts = options || {};
+  // 已经截止的题集只写「已截止」，两个原因：
+  //   1. PTA 对这类题集有时仍然回 PENDING，光看 status 会显示成
+  //      「未开始 · 截止 2026-10-04」，自相矛盾；
+  //   2. 既然已经写了「已截止」，再挂一个截止时间也是废话。
+  if (source.status === "END" || hasEnded(source.endAt, opts.now)) {
+    return ENDED_TEXT;
+  }
   return [problemSetStatusText(source.status), formatDeadline(source.endAt)].filter(Boolean).join(" · ");
 }
 
@@ -117,6 +141,8 @@ function problemTooltipLines(problem, options) {
 
 module.exports = {
   SET_STATUS_TEXT,
+  ENDED_TEXT,
+  hasEnded,
   problemIconId,
   problemThemeColorId,
   problemSetStatusText,
