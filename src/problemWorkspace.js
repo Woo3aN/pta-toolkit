@@ -309,6 +309,69 @@ function buildProblemMarkdown(problem, context) {
   return lines.join("\n");
 }
 
+const HEADING_LINE = /^#{1,6}\s/;
+const SEPARATOR_LINE = /^\s*-{3,}\s*$/;
+const DETAIL_HEADING = "## 详细信息";
+
+/**
+ * 剥掉 problem.md 里「给本地文件用的」那层包装，只留题面正文。
+ *
+ * 包装都是生成器加的、有两处：
+ *   顶部：一级标题 + 元信息（新格式是「> 时间限制 …」一行，旧格式是一串 `- 题集：…` bullet）
+ *   末尾：`## 详细信息` 小节 + 生成器注释
+ *
+ * 预览面板自己会用 problemInfo 的同一份文案渲染这两处，所以必须剥掉 ——
+ * 否则面板里会把同一批信息显示两遍（面板一次、文件自带一次）。
+ *
+ * 安全阀：只有确认分隔线之前的那些行**全是**包装（标题 / bullet / 引用 / 空行）时才剥；
+ * 一看到别的内容就原样返回，免得把正文吃掉。旧格式的 problem.md 同样有效。
+ */
+function stripStatementWrapper(text) {
+  const source = String(text === null || text === undefined ? "" : text).replace(/\r\n?/g, "\n");
+  const lines = source.split("\n");
+
+  // ---- 顶部 ----
+  let start = 0;
+  while (start < lines.length && lines[start].trim() === "") {
+    start += 1;
+  }
+  let afterTitle = start;
+  if (afterTitle < lines.length && HEADING_LINE.test(lines[afterTitle].trim())) {
+    afterTitle += 1;
+  }
+  let wrapperEnd = -1;
+  for (let i = afterTitle; i < lines.length; i += 1) {
+    const trimmed = lines[i].trim();
+    if (SEPARATOR_LINE.test(lines[i])) {
+      wrapperEnd = i;
+      break;
+    }
+    if (trimmed === "") {
+      continue;
+    }
+    if (/^[-*+]\s/.test(trimmed) || /^>\s?/.test(trimmed)) {
+      continue;
+    }
+    wrapperEnd = -1; // 出现别的东西：这不是生成的包装，不剥
+    break;
+  }
+  let body = (wrapperEnd >= 0 ? lines.slice(wrapperEnd + 1) : lines.slice(start)).join("\n");
+
+  // ---- 末尾 ----
+  const detailIndex = body.lastIndexOf(`\n${DETAIL_HEADING}`);
+  if (detailIndex >= 0) {
+    const rest = body.slice(detailIndex + 1 + DETAIL_HEADING.length);
+    // 只有确认「详细信息」之后再没有别的二级标题时才切，免得误伤正文
+    if (!/^##\s/m.test(rest)) {
+      body = body.slice(0, detailIndex);
+    }
+  }
+  body = body.replace(/<!--[\s\S]*?-->\s*$/m, "");
+  body = body.replace(/\n\s*-{3,}\s*$/, "");
+
+  return body.replace(/^\s*\n/, "").replace(/\s+$/, "");
+}
+
 function yamlString(value) {
   const text = String(value === null || value === undefined ? "" : value);
   return `"${text.replace(/\\/g, "\\\\").replace(/"/g, '\\"')}"`;
@@ -756,6 +819,7 @@ module.exports = {
   normalizeStatement,
   extractSamples,
   buildProblemMarkdown,
+  stripStatementWrapper,
   buildNotesSkeleton,
   buildProblemSetIndex,
   writeProblemSetIndex,

@@ -564,6 +564,76 @@ async function main() {
   check("编译错误会带出编译日志", ceReport.includes("expected ';'"));
   check("编译错误状态中文", ceReport.includes("编译错误"));
 
+  // 在线测试（自定义测试）的摘要。
+  // PTA 对这类不计分的提交回的是 NEUTRAL，以前通知里就原样显示「测试结果：NEUTRAL」，等于没说。
+  const testSubmission = Object.assign({}, lastSub, {
+    status: "NEUTRAL",
+    score: null,
+    judgeResponseContents: [
+      {
+        programmingJudgeResponseContent: {
+          compilationResult: { success: true },
+          testcaseJudgeResults: { 0: { result: "ACCEPTED", time: 0.1, memory: 4096 } }
+        }
+      }
+    ]
+  });
+  check("NEUTRAL 有中文名（不再原样漏英文）", api.submissionStatusText("NEUTRAL") === "未评判");
+  check(
+    "在线测试摘要报测试点，而不是 NEUTRAL",
+    submitMod.shortStatusLine({ data: { submission: testSubmission } }, { isTest: true }) ===
+      "1 个测试点，全部运行正常",
+    submitMod.shortStatusLine({ data: { submission: testSubmission } }, { isTest: true })
+  );
+
+  const abnormalSubmission = Object.assign({}, testSubmission, {
+    judgeResponseContents: [
+      {
+        programmingJudgeResponseContent: {
+          compilationResult: { success: true },
+          testcaseJudgeResults: {
+            0: { result: "ACCEPTED" },
+            1: { result: "WRONG_ANSWER" },
+            2: { result: "SEGMENTATION_FAULT" }
+          }
+        }
+      }
+    ]
+  });
+  check(
+    "有异常测试点时点名数量与原因",
+    submitMod.shortStatusLine({ data: { submission: abnormalSubmission } }, { isTest: true }) ===
+      "3 个测试点，2 个异常（答案错误、段错误）",
+    submitMod.shortStatusLine({ data: { submission: abnormalSubmission } }, { isTest: true })
+  );
+  check(
+    "在线测试编译失败时直接说编译错误",
+    submitMod.shortStatusLine(
+      {
+        data: {
+          submission: Object.assign({}, testSubmission, {
+            judgeResponseContents: [
+              { programmingJudgeResponseContent: { compilationResult: { success: false, log: "boom" } } }
+            ]
+          })
+        }
+      },
+      { isTest: true }
+    ) === "编译错误"
+  );
+  check(
+    "没有测试点信息时退回状态中文 + 注明不计分",
+    submitMod.shortStatusLine(
+      { data: { submission: Object.assign({}, testSubmission, { judgeResponseContents: [] }) } },
+      { isTest: true }
+    ) === "未评判（自定义测试不计分）"
+  );
+  check(
+    "提交（非测试）的摘要仍然带得分",
+    submitMod.shortStatusLine({ data: { submission: lastSub } }, { isTest: false }) === "答案错误，得分 10",
+    submitMod.shortStatusLine({ data: { submission: lastSub } }, { isTest: false })
+  );
+
   console.log("\n19) 提交记录筛选（PTA 会忽略按题过滤的参数，只能在本地筛）");
   const submissionsMod = require("../src/submissions");
   const rawSubs = [
@@ -1232,6 +1302,134 @@ async function main() {
     "字段构成符合约定",
     statementLabels.join("|") === "题集|题型|分值|作者 / 来源|在线地址|本地抓取",
     statementLabels
+  );
+
+  console.log("\n31) 面板不再重复显示文件自带的元信息 / 刷新题面真的会刷");
+
+  const newFormat = [
+    "# 3.0 稀疏矩阵加法",
+    "",
+    "> 时间限制 400 ms · 内存限制 65536 KB（64.0 MB）",
+    "",
+    "---",
+    "",
+    "## 题目描述",
+    "",
+    "给定两个矩阵$$A$$和$$B$$。",
+    "",
+    "## 样例",
+    "",
+    "### 样例 1",
+    "",
+    "#### 输入",
+    "",
+    "```text",
+    "1",
+    "```",
+    "",
+    "> 样例已同时写入 `samples/` 目录（`1.in` / `1.out` …），方便本地直接跑。",
+    "",
+    "## 详细信息",
+    "",
+    "- 题集：2026实验三（`1`）",
+    "- 题型：编程题",
+    "- 本地抓取：2026-10-10 09:03",
+    "",
+    "---",
+    "",
+    "<!-- 本文件由 PTA Toolkit 生成，每次刷新题面都会重写。笔记请写在 notes.md。 -->",
+    ""
+  ].join("\n");
+
+  const strippedNew = ws.stripStatementWrapper(newFormat);
+  check("新格式：剥掉顶部元信息", !strippedNew.includes("时间限制") && !strippedNew.includes("题集："), strippedNew);
+  check("新格式：剥掉末尾的「## 详细信息」", !strippedNew.includes("详细信息"), strippedNew);
+  check(
+    "新格式：剥掉生成器注释与末尾分隔线",
+    !strippedNew.includes("PTA Toolkit 生成") && !/^\s*-{3,}\s*$/m.test(strippedNew),
+    strippedNew
+  );
+  check(
+    "新格式：题面正文完好",
+    strippedNew.includes("## 题目描述") &&
+      strippedNew.includes("给定两个矩阵") &&
+      strippedNew.includes("## 样例"),
+    strippedNew
+  );
+  check("新格式：样例说明保留", strippedNew.includes("样例已同时写入"));
+
+  // 旧格式：他手上还压着不少这种文件（顶部是一串 - 题集：… 的 bullet），一样要能剥
+  const oldFormat = [
+    "# 3.1 最长对称子串",
+    "",
+    "- 题集：2026实验三 数组和广义表（`1`）",
+    "- 题型：编程题",
+    "- 分值：25",
+    "- 时间限制：400 ms",
+    "- 内存限制：65536 KB（64.0 MB）",
+    "- 作者 / 来源：陈越",
+    "- 在线地址：https://pintia.cn/problem-sets/1/exam/problems/type/7?problemSetProblemId=2",
+    "- 本地抓取：2026-10-10 09:02",
+    "",
+    "---",
+    "",
+    "## 题目描述",
+    "",
+    "求最长对称子串。",
+    "",
+    "> 注：PTA 返回了 2 条样例，其中 1 条完全重复，已去重。",
+    "",
+    "---",
+    "",
+    "<!-- 本文件由 PTA Toolkit 生成，每次刷新题面都会重写。笔记请写在 notes.md。 -->",
+    ""
+  ].join("\n");
+  const strippedOld = ws.stripStatementWrapper(oldFormat);
+  check(
+    "旧格式：那串 - 题集/题型/分值… 的 bullet 也剥得掉",
+    !strippedOld.includes("题集：") && !strippedOld.includes("作者 / 来源") && !strippedOld.includes("本地抓取"),
+    strippedOld
+  );
+  check("旧格式：题面正文完好", strippedOld.includes("## 题目描述") && strippedOld.includes("求最长对称子串"), strippedOld);
+  check("旧格式：剥完没有多余分隔线", !/^\s*-{3,}\s*$/m.test(strippedOld), strippedOld);
+
+  // 安全阀：不是我们生成的包装就原样返回
+  const plain = ["# 我的笔记", "", "第一段正文。", "", "- 这是我自己写的列表", "", "---", "", "第二段正文。", ""].join("\n");
+  check("不是生成的包装就不动它", ws.stripStatementWrapper(plain) === plain.trimEnd(), ws.stripStatementWrapper(plain));
+
+  // 面板：本地题面读进来之后不应该再出现文件自带的那批元信息
+  const panelHtml = problemPanel.buildPanelHtml({
+    problem: { label: "3.1", title: "最长对称子串" },
+    statement: strippedOld,
+    meta: {
+      problemTypeName: "编程题",
+      problemSetName: "2026实验三",
+      problemSetId: "1",
+      author: "陈越",
+      url: "https://pintia.cn/x",
+      fetchedAt: "2026-10-10 09:03",
+      score: 25,
+      timeLimit: 400,
+      memoryLimit: 65536
+    },
+    workspace: { hasWorkspace: true, language: "C++", sourceFile: "main.cpp", problemDir: "d:/x", hasNotes: false },
+    root: "d:/vscode c++/PTA"
+  });
+  check("面板里不再出现文件自带的「题集：」", panelHtml.indexOf("题集：") < 0);
+  check("面板自己渲染了时限与内存", panelHtml.includes("时间限制") && panelHtml.includes("内存限制"));
+  check("面板的详细信息来自 problemInfo", panelHtml.includes('class="details"') && panelHtml.includes('class="limits"'));
+  check("题面正文还在", panelHtml.includes("求最长对称子串"));
+
+  // 「刷新题面」按钮：必须真的回 PTA 重拉，而不是把面板按本地文件重画一遍
+  const extSource = fs.readFileSync(path.join(__dirname, "..", "extension.js"), "utf8");
+  check(
+    "面板的「刷新题面」不再是空操作",
+    /case "refresh":[\s\S]{0,220}refreshProblemFromPanel\(ref\)/.test(extSource),
+    "case \"refresh\" 分支没接上"
+  );
+  check(
+    "它复用与命令面板同一条刷新路径",
+    /async function refreshProblemFromPanel[\s\S]{0,900}refreshProblemWorkspace\(/.test(extSource)
   );
 
   console.log(`\n${failed === 0 ? "全部通过。" : `${failed} 项失败。`}`);

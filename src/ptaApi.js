@@ -435,6 +435,9 @@ const PROBLEM_PERMISSION = {
 /** PTA 判题状态 → 中文（照 PTA 官方前端用语） */
 const SUBMISSION_STATUS_TEXT = {
   OVERRIDDEN: "已被覆盖",
+  // NEUTRAL：PTA 对「自定义测试」这种不计分的提交回的状态。
+  // 以前这里没有它，所以界面上会原样显示英文 NEUTRAL。
+  NEUTRAL: "未评判",
   WAITING: "等待评测",
   JUDGING: "正在评测",
   COMPILE_ERROR: "编译错误",

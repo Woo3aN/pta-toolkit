@@ -981,12 +981,37 @@ function deriveRootFromProblemDir(problemDir) {
   return "";
 }
 
+/** 回 PTA 重新拉题面与样例，并重写本地文件。源码与笔记不会被覆盖。 */
+async function refreshProblemWorkspace(root, problemDir, metadata) {
+  const settings = getSettings();
+  const cookie = (await extensionContext.secrets.get(SECRET_COOKIE)) || "";
+  const result = await vscode.window.withProgress(
+    { location: vscode.ProgressLocation.Notification, title: "正在刷新题面与样例…" },
+    async () =>
+      ws.ensureProblemWorkspace({
+        workspaceRoot: root,
+        problemDir,
+        problemSetId: metadata.problemSetId,
+        problemSetName: metadata.problemSetName,
+        problem: await api.getProblemDetail(metadata.problemSetId, metadata.problemId, cookie),
+        language: metadata.language,
+        fileNameFormat: settings.fileNameFormat,
+        templateDir: settings.templateDir,
+        autoCreateSource: settings.autoCreateSource,
+        createNotesFile: settings.createNotesFile,
+        url: metadata.url,
+        problemTypeName: metadata.problemTypeName
+      })
+  );
+  log(`已刷新：${result.statementPath}`);
+  return result;
+}
+
 async function commandRefreshCurrentProblem() {
   const current = await requireCurrentProblem();
   if (!current) {
     return;
   }
-  const metadata = current.metadata;
   const settings = getSettings();
   const root =
     settings.workspaceRoot ||
@@ -995,30 +1020,43 @@ async function commandRefreshCurrentProblem() {
   if (!root) {
     return;
   }
-  const cookie = (await extensionContext.secrets.get(SECRET_COOKIE)) || "";
   try {
-    const result = await vscode.window.withProgress(
-      { location: vscode.ProgressLocation.Notification, title: "正在刷新题面与样例…" },
-      async () =>
-        ws.ensureProblemWorkspace({
-          workspaceRoot: root,
-          problemDir: current.problemDir,
-          problemSetId: metadata.problemSetId,
-          problemSetName: metadata.problemSetName,
-          problem: await api.getProblemDetail(metadata.problemSetId, metadata.problemId, cookie),
-          language: metadata.language,
-          fileNameFormat: settings.fileNameFormat,
-          templateDir: settings.templateDir,
-          autoCreateSource: settings.autoCreateSource,
-          createNotesFile: settings.createNotesFile,
-          url: metadata.url,
-          problemTypeName: metadata.problemTypeName
-        })
-    );
-    log(`已刷新：${result.statementPath}`);
+    await refreshProblemWorkspace(root, current.problemDir, current.metadata);
     vscode.window.showInformationMessage("题面与样例已刷新（源码与笔记未改动）。");
   } catch (error) {
     await handleError(error, "刷新失败");
+  }
+}
+
+/**
+ * 面板按钮「刷新题面」。
+ *
+ * 这里必须真的回 PTA 重新拉一次 —— 以前这个按钮只是把面板按本地的 problem.md
+ * 重画一遍（`case "refresh": break;`），文件根本没被重写，于是看起来像「刷新了但没变」。
+ * 按面板里的题目定位，不依赖当前编辑器，所以焦点在面板上时也能用。
+ */
+async function refreshProblemFromPanel(ref) {
+  const root = (await peekRoot({ skipPanel: true })) || "";
+  if (!root) {
+    const pick = await vscode.window.showWarningMessage(
+      "还没有选择题解目录，没法确定要刷新哪里。",
+      "现在选择"
+    );
+    if (pick === "现在选择") {
+      await commandChooseWorkspaceRoot();
+    }
+    return;
+  }
+  const local = await findLocalProblem(root, ref.problemSetId, ref.problemId);
+  if (!local || !local.metadata) {
+    vscode.window.showWarningMessage("这道题还没拉到本地，先点「创建代码」。");
+    return;
+  }
+  try {
+    await refreshProblemWorkspace(root, local.problemDir, local.metadata);
+    vscode.window.showInformationMessage("题面与样例已刷新（源码与笔记未改动）。");
+  } catch (error) {
+    await handleError(error, "刷新题面失败");
   }
 }
 
@@ -1076,7 +1114,25 @@ async function commandRunSamples() {
     }
     return;
   }
-  const pick = await vscode.window.showInformationMessage(outcome.message, "查看详情");
+  // 没全过就别用「信息」级别的提示框了，并且把第一个失败的原因直接写在消息里，
+  // 免得还要点一次「查看详情」才知道差在哪。
+  if (outcome.allPassed) {
+    const pick = await vscode.window.showInformationMessage(outcome.message, "查看详情");
+    if (pick === "查看详情") {
+      outputChannel.show();
+    }
+    return;
+  }
+  const firstBad = (outcome.results || []).find((item) => !item.passed);
+  const reason = firstBad
+    ? `样例 ${firstBad.index} 未通过${
+        firstBad.timedOut ? "（超时）" : firstBad.exitCode ? `（退出码 ${firstBad.exitCode}）` : "（输出不符）"
+      }`
+    : "";
+  const pick = await vscode.window.showWarningMessage(
+    reason ? `${outcome.message}：${reason}` : outcome.message,
+    "查看详情"
+  );
   if (pick === "查看详情") {
     outputChannel.show();
   }
@@ -1356,8 +1412,10 @@ async function commandTestCurrent() {
       isTest: true
     });
     log(report);
-    const status = (result.data.submission || {}).status;
-    await vscode.window.showInformationMessage(`测试结果：${api.submissionStatusText(status)}`, "查看详情");
+    await vscode.window.showInformationMessage(
+      `在线测试：${submit.shortStatusLine(result, { isTest: true })}`,
+      "查看详情"
+    );
   } catch (error) {
     await handleError(error, "在线测试失败");
   }
@@ -1960,7 +2018,9 @@ async function buildPreviewContext(ref, options) {
   if (local) {
     const statementPath = path.join(local.problemDir, ws.STATEMENT_FILE_NAME);
     if (await exists(statementPath)) {
-      statement = await fs.promises.readFile(statementPath, "utf8");
+      // 本地 problem.md 里带着「给本地文件用的」包装：标题 + 元信息 + 末尾的「详细信息」。
+      // 面板自己会用同一份文案渲染这两处，所以这里只取题面正文，免得同一批信息显示两遍。
+      statement = ws.stripStatementWrapper(await fs.promises.readFile(statementPath, "utf8"));
     }
   }
 
@@ -2199,6 +2259,10 @@ async function handlePanelCommand(command) {
       await commandChooseWorkspaceRoot();
       break;
     case "refresh":
+      // 真的回 PTA 重新拉一次并重写 problem.md（下面统一重渲染面板）
+      if (ref) {
+        await refreshProblemFromPanel(ref);
+      }
       break;
     default:
       return;

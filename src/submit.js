@@ -236,12 +236,46 @@ function buildReport(result, meta) {
   return lines.join("\n");
 }
 
-function shortStatusLine(result) {
-  const submission = (result && result.data && result.data.submission) || {};
-  const status = statusText(submission.status);
+/**
+ * 一句话摘要（通知里用）。
+ *
+ * 自定义测试（在线测试）不能只报 submission.status —— PTA 对这类不计分的提交回的是
+ * NEUTRAL，显示成「测试结果：NEUTRAL」等于什么都没说。所以这里改成报测试点的情况：
+ * 有几个点、跑没跑通。编译失败优先报编译错误。
+ */
+function shortStatusLine(result, options) {
+  const opts = options || {};
+  const data = (result && result.data) || {};
+  const submission = data.submission || {};
+  const judge = pickJudgeContent(submission);
+  const compile = judge && judge.compilationResult;
+
+  if (compile && compile.success === false) {
+    return "编译错误";
+  }
+
+  const testcases = (judge && judge.testcaseJudgeResults) || null;
+  const keys = testcases ? Object.keys(testcases) : [];
+
+  if (opts.isTest) {
+    if (keys.length) {
+      // 自定义测试没有标准答案，逐点报「答案正确」没意义，只看有没有异常
+      const abnormal = keys.filter((key) => {
+        const item = testcases[key] || {};
+        return item.result && item.result !== "ACCEPTED";
+      });
+      if (abnormal.length) {
+        const reasons = abnormal.map((key) => statusText((testcases[key] || {}).result));
+        return `${keys.length} 个测试点，${abnormal.length} 个异常（${reasons.join("、")}）`;
+      }
+      return `${keys.length} 个测试点，全部运行正常`;
+    }
+    return `${statusText(submission.status)}（自定义测试不计分）`;
+  }
+
   const score =
     submission.score === undefined || submission.score === null ? "" : `，得分 ${formatScore(submission.score)}`;
-  return `${status}${score}`;
+  return `${statusText(submission.status)}${score}`;
 }
 
 module.exports = {
