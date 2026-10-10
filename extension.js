@@ -1096,6 +1096,14 @@ async function commandRunSamples() {
   }
   const metadata = current.metadata;
   const settings = getSettings();
+
+  // 提交 / 在线测试用的是**编辑器里的内容**（含未保存的改动），本地跑样例却编译磁盘上的文件
+  // —— 不先存盘的话两边看到的代码不一样，就会出现「网站上是对的、本地输出为空」。
+  // 所以跑之前先把当前文档存盘。
+  if (current.document.isDirty) {
+    await current.document.save();
+  }
+
   const outcome = await vscode.window.withProgress(
     { location: vscode.ProgressLocation.Notification, title: "正在本地跑样例…" },
     async () =>

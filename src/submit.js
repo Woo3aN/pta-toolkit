@@ -153,7 +153,12 @@ function buildReport(result, meta) {
   const lines = [];
 
   const title = info.isTest ? "在线测试结果" : "提交结果";
-  lines.push(`${title}：${statusText(submission.status)}（${submission.status || "未知"}）`);
+  // 自定义测试不计分，PTA 回的状态是 NEUTRAL，照着报等于什么都没说 —— 报测试点更有用
+  lines.push(
+    info.isTest
+      ? `${title}：${shortStatusLine(result, { isTest: true })}`
+      : `${title}：${statusText(submission.status)}（${submission.status || "未知"}）`
+  );
   if (info.problemTitle) {
     lines.push(`题目：${info.label ? info.label + " " : ""}${info.problemTitle}`);
   }

@@ -633,6 +633,24 @@ async function main() {
     submitMod.shortStatusLine({ data: { submission: lastSub } }, { isTest: false }) === "答案错误，得分 10",
     submitMod.shortStatusLine({ data: { submission: lastSub } }, { isTest: false })
   );
+  check(
+    "在线测试报告的首行报测试点，不再写 NEUTRAL",
+    (() => {
+      const report = submitMod.buildReport({ data: { submission: testSubmission } }, { isTest: true });
+      return report.split("\n")[0] === "在线测试结果：1 个测试点，全部运行正常";
+    })()
+  );
+  check(
+    "本地跑样例前会先存盘（否则和提交用的代码对不上）",
+    (() => {
+      const src = fs.readFileSync(path.join(__dirname, "..", "extension.js"), "utf8");
+      return (
+        /async function commandRunSamples\(\)[\s\S]{0,700}current\.document\.isDirty[\s\S]{0,140}current\.document\.save\(\)/.test(
+          src
+        )
+      );
+    })()
+  );
 
   console.log("\n19) 提交记录筛选（PTA 会忽略按题过滤的参数，只能在本地筛）");
   const submissionsMod = require("../src/submissions");
