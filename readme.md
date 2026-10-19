@@ -2,7 +2,7 @@
 
 [![VS Code](https://img.shields.io/badge/VS%20Code-%5E1.88.0-007ACC?logo=visualstudiocode&logoColor=white)](https://code.visualstudio.com/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
-[![Version](https://img.shields.io/badge/version-0.2.1-blue.svg)](CHANGELOG.md)
+[![Version](https://img.shields.io/badge/version-0.3.0-blue.svg)](CHANGELOG.md)
 [![Dependencies](https://img.shields.io/badge/dependencies-0-brightgreen.svg)](#实现说明)
 
 > 把拼题A（PTA / pintia.cn）的题目拉进 VS Code：**每题一个文件夹**，
@@ -42,7 +42,7 @@
 ## 安装
 
 ```bash
-code --install-extension pta-toolkit-0.2.1.vsix
+code --install-extension pta-toolkit-0.3.0.vsix
 ```
 
 也可以在 VS Code 扩展面板右上角 `...` → 从 VSIX 安装。
@@ -314,9 +314,9 @@ PTA 给登录接口加了腾讯图形验证码，不带验证码请求 `POST /ap
 **提交报「自己创建的题集」？**
 PTA 不为这类题集创建考试容器，因此无法提交。导出题面与笔记不受影响。
 
-**题面里的公式显示成 `$$…$$`？**
-面板会尝试从 CDN 加载 MathJax 渲染公式；离线或加载失败时保留原始 LaTeX，
-用等宽字体显示，仍然可读。
+**题面里的公式显示成原始的 `\(…\)` 或 `$$…$$`？**
+面板用内置的 MathJax（`vendor/mathjax/`）渲染，不联网。如果仍然显示原始 LaTeX，
+多半是打包时把 `vendor/mathjax/` 漏掉了（会退回 CDN，一旦网络拦掉就不渲染）。
 
 **样例是空的？**
 有些题本身没有样例（例如无输入的题），PTA 返回空数组属正常。
@@ -342,7 +342,7 @@ PTA 不为这类题集创建考试容器，因此无法提交。导出题面与�
 | 题型覆盖 | 只导出有结构化题面 / 样例的题型（编程题、函数题）。判断题、选择题不导出 |
 | 隐藏测试点 | 只能拿到题面公开的样例（`exampleTestDatas`），隐藏测试点 PTA 不给 |
 | 考试型题集 | 带考试入口 / 考试密码的题集路径与普通作业题集不同，暂未专门适配 |
-| 公式与插图 | 公式本身若是远程图片，则保留链接而不下载到本地；面板靠 CDN 的 MathJax 渲染公式，离线时退回显示原始 LaTeX |
+| 公式与插图 | 公式本身若是远程图片，则保留链接而不下载到本地；面板用内置的 MathJax 渲染公式，不联网 |
 | 账号密码登录 | 不可用，原因见[常见问题](#常见问题) |
 | 提交范围 | 自己创建的题集（PTA 侧权限值 47）无法提交 |
 | 文件名 | 默认保留中文、不转拼音，格式可用 `pta.fileNameFormat` 自行调整 |
@@ -383,13 +383,13 @@ PTA 随时可能改接口。所有端点都集中在 `src/ptaApi.js`，真出问
 # 调试：VS Code 打开本目录，按 F5（无需编译）
 # 打包并安装
 python tools/build-vsix.py
-code --install-extension pta-toolkit-0.2.1.vsix --force
+code --install-extension pta-toolkit-0.3.0.vsix --force
 ```
 
 测试：
 
 ```bash
-node test/offline.js             # 离线 363 项：目录命名、不覆盖规则、笔记同步、编译器命令、
+node test/offline.js             # 离线 375 项：目录命名、不覆盖规则、笔记同步、编译器命令、
                                  #   真跑样例、二维码、Set-Cookie、收藏夹、做题状态、侧边栏节点、
                                  #   提交报告、Markdown 渲染、预览面板 HTML、tasks.json 合并、
                                  #   题集「已截止」文案、面板↔根目录的递归回归、公式行内渲染、
@@ -445,6 +445,7 @@ node tools/check-consistency.js  # 核对 package.json / extension.js / readme �
 | 组件 | 许可 | 用途 |
 |---|---|---|
 | [qrcode-generator](https://github.com/kazuhikoarase/qrcode-generator) 1.4.4 | MIT | 把微信授权链接编码成二维码 |
+| [MathJax](https://www.mathjax.org/) 3 | Apache-2.0 | 渲染题面里的 LaTeX 公式（`vendor/mathjax/tex-svg.js`） |
 
 以源码内联方式引入（`vendor/qrcode.js`），以保持「零依赖、免编译」。
 详见 `vendor/THIRD-PARTY-NOTICES.md`。

@@ -14,3 +14,14 @@
 
 选择直接内联而不是加 npm 依赖，是为了保持扩展「零依赖、免编译」——
 VS Code 扩展不需要构建步骤就能跑，装 .vsix 也不用联网装包。
+
+## MathJax
+
+- 文件：`vendor/mathjax/tex-svg.js`
+- 版本：3（tex-svg 单文件包）
+- 作者：MathJax Consortium
+- 许可：Apache-2.0
+- 来源：<https://www.mathjax.org/> / <https://github.com/mathjax/MathJax>
+- 用途：在题目预览面板里渲染题面的 LaTeX 公式。选 `tex-svg.js` 是因为它把字形做成 SVG
+  路径内嵌，不依赖额外字体文件，单个文件就能离线工作。
+  上游代码未作修改，许可声明保留在文件头部。

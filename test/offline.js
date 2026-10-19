@@ -459,10 +459,12 @@ async function main() {
   check("无状态不加颜色", treeModel.problemThemeColorId("") === null);
   check("题集状态中文", treeModel.problemSetStatusText("PROCESSING") === "进行中");
   check("未知题集状态原样返回", treeModel.problemSetStatusText("WHATEVER") === "WHATEVER");
+  // 别写死日期 —— 以前这里用固定日期，过了那天测试就自己挂了
+  const futureEnd = new Date(Date.now() + 7 * 24 * 3600 * 1000).toISOString();
   check(
     "题集副标题含截止时间",
-    treeModel.problemSetDescription({ status: "PROCESSING", endAt: "2026-10-10T12:00:00Z" }).includes("截止 2026-10-10"),
-    treeModel.problemSetDescription({ status: "PROCESSING", endAt: "2026-10-10T12:00:00Z" })
+    treeModel.problemSetDescription({ status: "PROCESSING", endAt: futureEnd }).includes("截止 "),
+    treeModel.problemSetDescription({ status: "PROCESSING", endAt: futureEnd })
   );
   check("公开题集用 library 图标", treeModel.problemSetIconId({ isPublic: true }) === "library");
   check("书本题集用 book 图标", treeModel.problemSetIconId({ type: "BOOK" }) === "book");
@@ -1603,6 +1605,63 @@ async function main() {
     "CSP 允许加载 https 图片",
     /img-src [^;]*https:/.test(problemPanel.buildPanelHtml({ statement: "x" }))
   );
+
+  console.log("\n35) MathJax 本地化 与 登录状态提示");
+
+  const mathjaxPath = path.join(__dirname, "..", "vendor", "mathjax", "tex-svg.js");
+  check("vendor 里有本地 MathJax（断网也能渲染公式）", fs.existsSync(mathjaxPath));
+  check(
+    "本地 MathJax 文件是完整的（> 1MB）",
+    fs.existsSync(mathjaxPath) && fs.statSync(mathjaxPath).size > 1024 * 1024,
+    fs.existsSync(mathjaxPath) ? fs.statSync(mathjaxPath).size : "缺失"
+  );
+  check(
+    "面板默认指向 tex-svg（本地与 CDN 回退都用它）",
+    problemPanel.buildPanelHtml({ statement: "x" }).includes("tex-svg.js")
+  );
+  check(
+    "CSP 留了本地资源来源占位（由面板实例换成 cspSource）",
+    problemPanel.buildPanelHtml({ statement: "x" }).includes("__PTA_CSP_SOURCE__")
+  );
+  check(
+    "面板实例会把 MathJax 换成 vendor 里的本地文件",
+    /patchHtml\(html\)[\s\S]{0,800}MATHJAX_LOCAL/.test(
+      fs.readFileSync(path.join(__dirname, "..", "src", "problemPanel.js"), "utf8")
+    )
+  );
+
+  const treeModule2 = loadWithFakeVscode("src/tree.js", {}, "");
+  const expiredProvider = new treeModule2.PtaTreeDataProvider({
+    getCookie: async () => "fake-cookie",
+    getWorkspaceRoot: async () => "",
+    isAuthExpired: () => true,
+    onAuthError: () => {},
+    log: () => {}
+  });
+  const expiredRoots = await expiredProvider.getChildren();
+  check("登录过期：侧边栏顶部一直提示重新登录", expiredRoots[0].label === "登录已过期，请重新登录", expiredRoots[0].label);
+  check("点它就去登录", expiredRoots[0].command && expiredRoots[0].command.command === "pta.login");
+  check("过期用警告图标", expiredRoots[0].iconPath && expiredRoots[0].iconPath.id === "warning");
+  check("分组照旧在它后面", expiredRoots.length === 4 && expiredRoots[1].label === "我的题集");
+
+  const anonProvider = new treeModule2.PtaTreeDataProvider({
+    getCookie: async () => "",
+    getWorkspaceRoot: async () => "",
+    isAuthExpired: () => false,
+    log: () => {}
+  });
+  const anonRoots = await anonProvider.getChildren();
+  check("没登录：顶部提示去登录", anonRoots[0].label === "请登录（微信扫码）", anonRoots[0].label);
+  check("没登录用账号图标", anonRoots[0].iconPath && anonRoots[0].iconPath.id === "account");
+
+  const okProvider = new treeModule2.PtaTreeDataProvider({
+    getCookie: async () => "fake-cookie",
+    getWorkspaceRoot: async () => "",
+    isAuthExpired: () => false,
+    log: () => {}
+  });
+  const okRoots = await okProvider.getChildren();
+  check("正常登录时不插登录条目", okRoots.length === 3 && okRoots[0].label === "我的题集");
 
   console.log(`\n${failed === 0 ? "全部通过。" : `${failed} 项失败。`}`);
   console.log(`（临时目录保留在 ${root}，可自行删除）`);

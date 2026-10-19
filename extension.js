@@ -22,6 +22,8 @@ const treeModel = require("./src/treeModel");
 
 const SECRET_COOKIE = "pta.session.cookie";
 const STATE_USER = "pta.user";
+// 登录是否已过期。记在 globalState 里，重载窗口后也还能提示「请重新登录」。
+const STATE_AUTH_EXPIRED = "pta.authExpired";
 const DIAGNOSE_DIR = "_pta-diagnose";
 const OUTPUT_NAME = "PTA Toolkit";
 
@@ -99,6 +101,25 @@ async function getCookie(options) {
   return null;
 }
 
+/** 登录过期了就把这个记号立起来：侧边栏和状态栏会一直提示，而不是弹一次就没了。 */
+async function markAuthExpired() {
+  await extensionContext.globalState.update(STATE_AUTH_EXPIRED, true);
+  await refreshStatusBar();
+  if (treeProvider) {
+    treeProvider.refresh();
+  }
+}
+
+function isAuthExpired() {
+  return extensionContext.globalState.get(STATE_AUTH_EXPIRED) === true;
+}
+
+async function clearAuthExpired() {
+  if (isAuthExpired()) {
+    await extensionContext.globalState.update(STATE_AUTH_EXPIRED, undefined);
+  }
+}
+
 async function refreshStatusBar() {
   if (!statusBarItem) {
     return;
@@ -108,6 +129,14 @@ async function refreshStatusBar() {
   if (!cookie) {
     statusBarItem.text = "$(sign-in) PTA: 未登录";
     statusBarItem.tooltip = "点击登录拼题A（粘贴 PTASession）";
+    statusBarItem.command = "pta.login";
+    statusBarItem.show();
+    return;
+  }
+  // 有 cookie 但已经失效（太久没用，PTA 那边把会话回收了）
+  if (isAuthExpired()) {
+    statusBarItem.text = "$(warning) PTA: 登录已过期，请重新登录";
+    statusBarItem.tooltip = "会话已失效，点击重新登录";
     statusBarItem.command = "pta.login";
     statusBarItem.show();
     return;
@@ -123,6 +152,7 @@ async function handleError(error, hint) {
   const message = error && error.message ? error.message : String(error);
   log(`[错误] ${error && error.stack ? error.stack : message}`);
   if (api.isAuthError(error)) {
+    await markAuthExpired();
     const pick = await vscode.window.showErrorMessage(message, "重新登录", "查看输出");
     if (pick === "重新登录") {
       await commandLogin();
@@ -584,6 +614,8 @@ async function storeSession(cookie, user) {
     id: user && user.id,
     user: (user && (user.nickname || user.email)) || (user && user.id) || "已登录"
   });
+  // 登录成功，「登录已过期」的记号就撤掉
+  await clearAuthExpired();
   await refreshStatusBar();
   if (treeProvider) {
     treeProvider.refresh();
@@ -796,6 +828,7 @@ async function commandLogout() {
   }
   await extensionContext.secrets.delete(SECRET_COOKIE);
   await extensionContext.globalState.update(STATE_USER, undefined);
+  await clearAuthExpired();
   await refreshStatusBar();
   if (treeProvider) {
     treeProvider.refresh();
@@ -2579,6 +2612,9 @@ function activate(context) {
   treeProvider = new PtaTreeDataProvider({
     getCookie: async () => (await extensionContext.secrets.get(SECRET_COOKIE)) || "",
     getWorkspaceRoot: peekRoot,
+    // 侧边栏顶部要能一直提示「请登录 / 登录已过期」，而不是只在加载失败时闪一下
+    isAuthExpired: () => isAuthExpired(),
+    onAuthError: () => markAuthExpired(),
     log
   });
   context.subscriptions.push(vscode.window.registerTreeDataProvider(TREE_VIEW_ID, treeProvider));

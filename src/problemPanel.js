@@ -11,8 +11,22 @@
  */
 
 const path = require("path");
+const fs = require("fs");
 const markdown = require("./markdown");
 const problemInfo = require("./problemInfo");
+
+/**
+ * MathJax 走本地文件，不走 CDN。
+ *
+ * 以前是从 jsdelivr 加载，但他机器上有加速器/代理，webview 里拉不下来 ——
+ * 结果公式全变成原样的 \(A\)。现在把 tex-svg.js（SVG 输出，自包含、不需要额外字体）
+ * 打进 vendor/ 里，断网也能渲染；万一包里没有这个文件，再退回 CDN。
+ */
+const MATHJAX_CDN = "https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-svg.js";
+const MATHJAX_LOCAL = path.join(__dirname, "..", "vendor", "mathjax", "tex-svg.js");
+
+/** 本地资源来源（webview.cspSource）只有面板实例才知道，先占位。 */
+const CSP_PLACEHOLDER = "__PTA_CSP_SOURCE__";
 
 const { escapeHtml, renderMarkdown } = markdown;
 
@@ -276,7 +290,7 @@ function buildPanelHtml(context) {
 <html lang="zh-CN">
 <head>
 <meta charset="UTF-8">
-<meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src https: http: data:; media-src https: http: data:; style-src 'unsafe-inline'; script-src 'unsafe-inline' https://cdn.jsdelivr.net; font-src https: data:; connect-src https:;">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src https: http: data:; media-src https: http: data:; style-src 'unsafe-inline'; script-src 'unsafe-inline' https://cdn.jsdelivr.net ${CSP_PLACEHOLDER}; font-src https: data:; connect-src https:;">
 <title>${escapeHtml(title)}</title>
 <style>${BASE_STYLE}</style>
 <script>
@@ -286,7 +300,7 @@ function buildPanelHtml(context) {
     svg: { fontCache: 'global' }
   };
 </script>
-<script id="MathJax-script" async src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js"></script>
+<script id="MathJax-script" async src="${MATHJAX_CDN}"></script>
 </head>
 <body>
   <div class="wrap">
@@ -331,7 +345,9 @@ class ProblemPanel {
     const vscode = require("vscode");
     const panel = vscode.window.createWebviewPanel("ptaProblemPreview", title, ProblemPanel.viewColumn(), {
       enableScripts: true,
-      retainContextWhenHidden: true
+      retainContextWhenHidden: true,
+      // 允许加载 vendor/mathjax 里的本地 MathJax
+      localResourceRoots: [vscode.Uri.file(path.join(__dirname, "..", "vendor"))]
     });
     panel.iconPath = undefined;
     panel.webview.onDidReceiveMessage(async (message) => {
@@ -357,6 +373,26 @@ class ProblemPanel {
   }
 
   /** 打开或复用一个面板并渲染内容。key 变化表示换了题目。 */
+  /**
+   * 把 buildPanelHtml 产出的 HTML 补上面板实例才知道的东西：
+   *   · CSP 里的本地资源来源（webview.cspSource）
+   *   · MathJax 地址 —— 优先用 vendor/mathjax 里的本地文件
+   *     （走 CDN 时，网络里一旦有代理/加速器拦掉 jsdelivr，公式就只剩原始 LaTeX）
+   */
+  patchHtml(html) {
+    const vscode = require("vscode");
+    let out = String(html || "").split(CSP_PLACEHOLDER).join(this.panel.webview.cspSource);
+    try {
+      if (fs.existsSync(MATHJAX_LOCAL)) {
+        const uri = this.panel.webview.asWebviewUri(vscode.Uri.file(MATHJAX_LOCAL)).toString();
+        out = out.split(MATHJAX_CDN).join(uri);
+      }
+    } catch (_error) {
+      /* 换不到本地 URI 就用 CDN，别把面板搞崩 */
+    }
+    return out;
+  }
+
   show(key, title, html) {
     const vscode = require("vscode");
     if (!this.panel) {
@@ -366,7 +402,7 @@ class ProblemPanel {
       this.panel.reveal(ProblemPanel.viewColumn(), false);
     }
     this.currentKey = key;
-    this.panel.webview.html = html;
+    this.panel.webview.html = this.patchHtml(html);
     return this.panel;
   }
 
@@ -376,7 +412,7 @@ class ProblemPanel {
       return this.show(key, title, html);
     }
     this.panel.title = title;
-    this.panel.webview.html = html;
+    this.panel.webview.html = this.patchHtml(html);
     return this.panel;
   }
 

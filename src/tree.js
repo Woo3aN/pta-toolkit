@@ -31,8 +31,18 @@ function messageItem(text, icon) {
   return item;
 }
 
-function groupItem(group, label, icon, tooltip) {
-  const item = new vscode.TreeItem(label, vscode.TreeItemCollapsibleState.Expanded);
+/** 顶部的「请登录 / 登录已过期」条目，点一下就去登录。 */
+function loginItem(text, expired) {
+  const item = new vscode.TreeItem(text, vscode.TreeItemCollapsibleState.None);
+  item.kind = "message";
+  item.contextValue = "pta.login";
+  item.iconPath = new vscode.ThemeIcon(expired ? "warning" : "account");
+  item.tooltip = expired ? "会话已失效，点这里重新登录" : "点这里登录拼题A（微信扫码）";
+  item.command = { command: "pta.login", title: "登录" };
+  return item;
+}
+
+function groupItem(group, label, icon, tooltip) {  const item = new vscode.TreeItem(label, vscode.TreeItemCollapsibleState.Expanded);
   item.kind = "group";
   item.group = group;
   item.contextValue = "pta.group";
@@ -51,6 +61,8 @@ class PtaTreeDataProvider {
     const opts = options || {};
     this.getCookie = opts.getCookie || (async () => "");
     this.getWorkspaceRoot = opts.getWorkspaceRoot || (async () => "");
+    this.isAuthExpired = opts.isAuthExpired || (() => false);
+    this.onAuthError = opts.onAuthError || (() => {});
     this.log = opts.log || (() => {});
     this.emitter = new vscode.EventEmitter();
     this.onDidChangeTreeData = this.emitter.event;
@@ -81,18 +93,31 @@ class PtaTreeDataProvider {
     } catch (error) {
       this.log(`侧边栏加载失败：${error && error.message ? error.message : error}`);
       if (api.isAuthError(error)) {
-        return [messageItem("登录已失效，请点标题栏的登录按钮重新登录", "warning")];
+        // 顺手把「登录已过期」记下来，顶部就会一直提示
+        this.onAuthError();
+        return [messageItem("登录已失效，点标题栏的登录按钮重新登录", "warning")];
       }
       return [messageItem(`加载失败：${error && error.message ? error.message : error}`, "error")];
     }
   }
 
-  rootGroups() {
-    return [
+  async rootGroups() {
+    const items = [];
+    // 长时间不用，PTA 会把会话回收掉。这里在「账号」那一栏一直提示，
+    // 而不是等他点开题集、报错了才知道。
+    const expired = Boolean(await this.isAuthExpired());
+    const cookie = await this.getCookie();
+    if (expired) {
+      items.push(loginItem("登录已过期，请重新登录", true));
+    } else if (!cookie) {
+      items.push(loginItem("请登录（微信扫码）", false));
+    }
+    items.push(
       groupItem(GROUP_MINE, "我的题集", "account", "你已加入的题目集（含老师布置的）"),
       groupItem(GROUP_FAVORITES, "收藏夹", "star", "本地收藏的题目"),
       groupItem(GROUP_PUBLIC, "公开题集", "library", "无需登录即可浏览的题目集")
-    ];
+    );
+    return items;
   }
 
   async groupChildren(group) {
