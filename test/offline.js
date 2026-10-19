@@ -609,6 +609,22 @@ async function main() {
       "3 个测试点，2 个异常（答案错误、段错误）",
     submitMod.shortStatusLine({ data: { submission: abnormalSubmission } }, { isTest: true })
   );
+  const neutralTestcaseSubmission = Object.assign({}, testSubmission, {
+    judgeResponseContents: [
+      {
+        programmingJudgeResponseContent: {
+          compilationResult: { success: true },
+          testcaseJudgeResults: { 0: { result: "NEUTRAL", time: 0, memory: 368 } }
+        }
+      }
+    ]
+  });
+  check(
+    "测试点结果为 NEUTRAL 不算异常（自定义测试无标准答案）",
+    submitMod.shortStatusLine({ data: { submission: neutralTestcaseSubmission } }, { isTest: true }) ===
+      "1 个测试点，全部运行正常",
+    submitMod.shortStatusLine({ data: { submission: neutralTestcaseSubmission } }, { isTest: true })
+  );
   check(
     "在线测试编译失败时直接说编译错误",
     submitMod.shortStatusLine(

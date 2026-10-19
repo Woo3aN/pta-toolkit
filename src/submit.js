@@ -264,10 +264,13 @@ function shortStatusLine(result, options) {
 
   if (opts.isTest) {
     if (keys.length) {
-      // 自定义测试没有标准答案，逐点报「答案正确」没意义，只看有没有异常
+      // 自定义测试没有标准答案，逐点报「答案正确」没意义，只看有没有异常。
+      // 注意 NEUTRAL 也是正常结果：PTA 判不了自定义数据的对错，测试点就给 NEUTRAL，
+      // 以前这里把所有非 ACCEPTED 都算异常，于是每次在线测试都误报「1 个异常（未评判）」。
+      const NON_ABNORMAL = new Set(["ACCEPTED", "NEUTRAL"]);
       const abnormal = keys.filter((key) => {
         const item = testcases[key] || {};
-        return item.result && item.result !== "ACCEPTED";
+        return item.result && !NON_ABNORMAL.has(item.result);
       });
       if (abnormal.length) {
         const reasons = abnormal.map((key) => statusText((testcases[key] || {}).result));
