@@ -15,6 +15,7 @@
 
 const fs = require("fs");
 const path = require("path");
+const atomicWrite = require("./atomicWrite");
 
 const ANNOTATION = /@pintia\s+([A-Za-z_][A-Za-z0-9_]*)\s*=\s*(start|end)/;
 
@@ -187,7 +188,7 @@ async function syncNotesFromCode(sourceText, notesPath) {
   }
 
   await fs.promises.mkdir(path.dirname(notesPath), { recursive: true });
-  await fs.promises.writeFile(notesPath, next, "utf8");
+  await atomicWrite.writeFileAtomic(notesPath, next);
   return { note, notesPath, changedFromCode: Boolean(note) };
 }
 

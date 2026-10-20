@@ -21,6 +21,7 @@ const problemPanel = require("../src/problemPanel");
 const taskFile = require("../src/taskFile");
 const treeModel = require("../src/treeModel");
 const problemInfo = require("../src/problemInfo");
+const atomicWrite = require("../src/atomicWrite");
 
 let failed = 0;
 
@@ -1678,6 +1679,28 @@ async function main() {
   });
   const okRoots = await okProvider.getChildren();
   check("正常登录时不插登录条目", okRoots.length === 3 && okRoots[0].label === "我的题集");
+
+  console.log("");
+  console.log("36) 原子写（元数据 / 配置防损坏）");
+  const atomicDir = path.join(root, "atomic-write");
+  fs.mkdirSync(atomicDir, { recursive: true });
+  const atomicTarget = path.join(atomicDir, "meta.json");
+  await atomicWrite.writeJsonAtomic(atomicTarget, { a: 1, b: "中文" });
+  check("原子写：内容正确", JSON.parse(fs.readFileSync(atomicTarget, "utf8")).b === "中文");
+  await atomicWrite.writeJsonAtomic(atomicTarget, { a: 2 });
+  check("原子写：可覆盖已有文件", JSON.parse(fs.readFileSync(atomicTarget, "utf8")).a === 2);
+  check(
+    "原子写：不留下临时文件",
+    fs.readdirSync(atomicDir).every((name) => !name.endsWith(".tmp")),
+    fs.readdirSync(atomicDir)
+  );
+  let atomicThrew = false;
+  try {
+    await atomicWrite.writeFileAtomic(path.join(atomicDir, "missing-dir", "x.txt"), "x");
+  } catch (_error) {
+    atomicThrew = true;
+  }
+  check("原子写：目录不存在时抛错而不是静默失败", atomicThrew);
 
   console.log(`\n${failed === 0 ? "全部通过。" : `${failed} 项失败。`}`);
   console.log(`（临时目录保留在 ${root}，可自行删除）`);

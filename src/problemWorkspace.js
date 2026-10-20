@@ -24,6 +24,7 @@ const templates = require("./templates");
 const notes = require("./notes");
 const problemInfo = require("./problemInfo");
 const markdown = require("./markdown");
+const atomicWrite = require("./atomicWrite");
 
 const METADATA_FILE_NAME = ".pta.json";
 const PROBLEM_SET_DIR_NAME = "problem-sets";
@@ -600,7 +601,7 @@ async function writeProblemSetIndex(problemSetDir, context) {
   }
 
   await fs.promises.mkdir(problemSetDir, { recursive: true });
-  await fs.promises.writeFile(indexPath, content, "utf8");
+  await atomicWrite.writeFileAtomic(indexPath, content);
   return indexPath;
 }
 
@@ -619,7 +620,8 @@ async function readMetadata(problemDir) {
 
 async function writeMetadata(problemDir, metadata) {
   const target = path.join(problemDir, METADATA_FILE_NAME);
-  await fs.promises.writeFile(target, `${JSON.stringify(metadata, null, 2)}\n`, "utf8");
+  // 原子写：元数据损坏会让整道题打不开，必须防「写到一半」
+  await atomicWrite.writeJsonAtomic(target, metadata);
   return target;
 }
 

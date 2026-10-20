@@ -17,6 +17,7 @@ const path = require("path");
 
 const api = require("./ptaApi");
 const ws = require("./problemWorkspace");
+const atomicWrite = require("./atomicWrite");
 
 const FAVORITES_FILE_NAME = ".pta-favorites.json";
 const SEARCH_CACHE_FILE_NAME = ".pta-search-index.json";
@@ -52,7 +53,7 @@ async function saveFavorites(root, data) {
   const target = path.join(root, FAVORITES_FILE_NAME);
   await fs.promises.mkdir(root, { recursive: true });
   const payload = Object.assign({}, data, { version: 1, updatedAt: new Date().toISOString() });
-  await fs.promises.writeFile(target, `${JSON.stringify(payload, null, 2)}\n`, "utf8");
+  await atomicWrite.writeJsonAtomic(target, payload);
   return target;
 }
 
@@ -190,7 +191,7 @@ async function saveSearchCache(root, problems) {
   const target = path.join(root, SEARCH_CACHE_FILE_NAME);
   await fs.promises.mkdir(root, { recursive: true });
   const payload = { version: 1, fetchedAt: new Date().toISOString(), problems };
-  await fs.promises.writeFile(target, `${JSON.stringify(payload, null, 2)}\n`, "utf8");
+  await atomicWrite.writeJsonAtomic(target, payload);
   return target;
 }
 

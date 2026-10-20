@@ -14,6 +14,7 @@
  */
 
 const fs = require("fs");
+const atomicWrite = require("./atomicWrite");
 
 const DEFAULT_VERSION = "2.0.0";
 const DEFAULT_INDENT = "  ";
@@ -120,7 +121,8 @@ async function mergeTasksFile(tasksPath, newTasks, options) {
     return { ok: false, reason: error.message };
   }
 
-  await fs.promises.writeFile(tasksPath, merged.text, "utf8");
+  // 这里写的是用户仓库里的 .vscode/tasks.json，写坏会直接影响编辑器，必须原子写
+  await atomicWrite.writeFileAtomic(tasksPath, merged.text);
   return Object.assign({ ok: true }, merged);
 }
 
