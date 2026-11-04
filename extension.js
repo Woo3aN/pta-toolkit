@@ -3,6 +3,7 @@
 const vscode = require("vscode");
 const fs = require("fs");
 const path = require("path");
+const os = require("os");
 
 const api = require("./src/ptaApi");
 const auth = require("./src/auth");
@@ -1979,13 +1980,30 @@ async function commandPullSubmission(argument) {
 
   const program = submit.extractProgram(result);
   if (!program.trim()) {
+    // 找不到源码时把原始响应落盘 —— 排查时直接看文件，比让人手抄日志靠谱
+    let dumpPath = "";
+    try {
+      const root = (await peekRoot({ skipPanel: true })) || "";
+      const dir = path.join(root || os.tmpdir(), DIAGNOSE_DIR);
+      await fs.promises.mkdir(dir, { recursive: true });
+      dumpPath = path.join(dir, `submission-${submission.id}.json`);
+      await fs.promises.writeFile(dumpPath, JSON.stringify(result, null, 2), "utf8");
+    } catch (_error) {
+      dumpPath = "";
+    }
     const keys = Object.keys((result && result.data && result.data.submission) || {}).join(", ");
     log(`提交 ${submission.id} 里没找到源码字段。submission 的字段：${keys || "(空)"}`);
+    if (dumpPath) {
+      log(`原始响应已写入：${dumpPath}`);
+    }
     const action = await vscode.window.showWarningMessage(
       "PTA 没有返回这次提交的源码（题型不支持或权限限制）。",
+      ...(dumpPath ? ["打开原始响应"] : []),
       "查看输出"
     );
-    if (action === "查看输出") {
+    if (action === "打开原始响应" && dumpPath) {
+      await vscode.window.showTextDocument(vscode.Uri.file(dumpPath));
+    } else if (action === "查看输出") {
       outputChannel.show();
     }
     return;
