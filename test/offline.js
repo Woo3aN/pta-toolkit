@@ -1734,6 +1734,43 @@ async function main() {
     submitMod.extractProgram({ data: { submission: { program: "   \n  " } } }) === ""
   );
 
+  // 实测的真实结构（2026-11-04）：**裸响应**（没有 data 包裹），
+  // 下面是按真实结构写的假数据（ID 都换成了占位值）
+  // 源码在 submission.submissionDetails[].programmingSubmissionDetail.program
+  const realSubmissionResponse = {
+    publicCases: { 0: false },
+    queued: -1,
+    submission: {
+      id: "9000000000000000001",
+      status: "ACCEPTED",
+      score: 25,
+      compiler: "GXX",
+      submissionDetails: [
+        {
+          problemSetProblemId: "9000000000000000002",
+          programmingSubmissionDetail: { compiler: "GXX", program: "#include <iostream>\nint main() { return 0; }" },
+          problemId: "0"
+        }
+      ],
+      judgeResponseContents: [
+        {
+          status: "ACCEPTED",
+          score: 25,
+          programmingJudgeResponseContent: {
+            compilationResult: { log: "warning: ...", success: true },
+            testcaseJudgeResults: { 0: { result: "ACCEPTED", testcaseScore: 15 } }
+          }
+        }
+      ]
+    },
+    user: { id: "9000000000000000003", nickname: "someone" }
+  };
+  check(
+    "真实结构：裸响应 + submissionDetails 里取到源码",
+    submitMod.extractProgram(realSubmissionResponse) === "#include <iostream>\nint main() { return 0; }",
+    submitMod.extractProgram(realSubmissionResponse)
+  );
+
   // 命令与菜单都注册上了
   const pkg = JSON.parse(fs.readFileSync(path.join(__dirname, "..", "package.json"), "utf8"));
   check(

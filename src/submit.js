@@ -289,13 +289,40 @@ function shortStatusLine(result, options) {
 /**
  * 从提交详情里抠出源码。
  *
- * 直接在网站上写的代码，本地是没有的 —— 要靠 `/api/submissions/<id>` 把那次提交的
- * 源码取回来。不同题型 / 不同版本把代码放在不同位置，这里按可能性依次找；
- * 都找不到就返回空串，让调用方去提示，别静默当成空代码写盘。
+ * 实测（2026-11-04，GET /api/submissions/{id}）真实结构是**裸响应**，没有 `data` 包裹：
+ *
+ *   {
+ *     "queued": -1,
+ *     "submission": {
+ *       "id": "...", "status": "ACCEPTED", ...,
+ *       "submissionDetails": [
+ *         { "programmingSubmissionDetail": { "compiler": "GXX", "program": "<源码>" } }
+ *       ],
+ *       "judgeResponseContents": [ { "programmingJudgeResponseContent": { ... } } ]
+ *     },
+ *     "user": { ... }
+ *   }
+ *
+ * 注意 `judgeResponseContents` 里**没有**源码（只有编译日志与各测试点结果），
+ * 别在那儿找。下面按「已知真实位置 → 其他可能写法 → 都不行就返回空串」的顺序取，
+ * 空串交给调用方提示，免得静默写个空文件把本地代码清掉。
  */
 function extractProgram(result) {
-  const data = (result && result.data) || {};
+  const raw = result || {};
+  // 有的调用方会包一层 data（提交/测试接口那样），这里两种都认
+  const data = raw.data || raw;
   const submission = data.submission || {};
+
+  // 1) 实测位置：submissionDetails[].programmingSubmissionDetail.program
+  const details = submission.submissionDetails || data.submissionDetails || [];
+  for (const item of details) {
+    const detail = item && (item.programmingSubmissionDetail || item.codeCompletionSubmissionDetail);
+    if (detail && typeof detail.program === "string" && detail.program.trim()) {
+      return detail.program;
+    }
+  }
+
+  // 2) 其它可能的写法（不同题型 / 接口版本）
   const candidates = [
     submission.program,
     submission.code,
@@ -310,6 +337,7 @@ function extractProgram(result) {
     }
   }
 
+  // 3) 兜底：judgeResponseContents（现在的响应里没有代码，但留着以防接口变回去）
   const contents = submission.judgeResponseContents || data.judgeResponseContents || [];
   for (const content of contents) {
     const programming =
