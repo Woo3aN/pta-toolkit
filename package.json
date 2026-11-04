@@ -2,7 +2,7 @@
   "name": "pta-toolkit",
   "displayName": "PTA Toolkit for VS Code",
   "description": "把拼题A（PTA）题集的题目、输入输出、样例拉取到本地：每题一个文件夹，可直接写代码、跑样例、整理笔记",
-  "version": "0.3.2",
+  "version": "0.4.0",
   "publisher": "woo3an",
   "license": "MIT",
   "engines": {
@@ -98,6 +98,11 @@
         "command": "pta.showSubmissions",
         "title": "PTA: 查看这道题的提交记录",
         "icon": "$(list-ordered)"
+      },
+      {
+        "command": "pta.pullSubmission",
+        "title": "PTA: 拉取我在 PTA 上的提交代码",
+        "icon": "$(cloud-download)"
       },
       {
         "command": "pta.syncNotes",
@@ -253,6 +258,10 @@
           "when": "true"
         },
         {
+          "command": "pta.pullSubmission",
+          "when": "true"
+        },
+        {
           "command": "pta.syncNotes",
           "when": "true"
         },
@@ -379,6 +388,11 @@
           "command": "pta.favoriteItem",
           "when": "view == pta.problemSets && viewItem =~ /^pta\\.problem/",
           "group": "1_actions@1"
+        },
+        {
+          "command": "pta.pullSubmission",
+          "when": "view == pta.problemSets && viewItem =~ /^pta\\.problem/",
+          "group": "1_actions@2"
         },
         {
           "command": "pta.openItemInBrowser",

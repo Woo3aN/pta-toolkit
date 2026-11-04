@@ -1702,6 +1702,69 @@ async function main() {
   }
   check("原子写：目录不存在时抛错而不是静默失败", atomicThrew);
 
+  console.log("\n37) 拉取 PTA 上的提交代码到本地");
+
+  // 源码在 PTA 的响应里可能是几种位置，extractProgram 要都能认
+  check(
+    "源码在 submission.program",
+    submitMod.extractProgram({ data: { submission: { program: "int main(){}" } } }) === "int main(){}"
+  );
+  check(
+    "源码在 programmingSubmissionDetail.program",
+    submitMod.extractProgram({ data: { submission: { programmingSubmissionDetail: { program: "#include <cstdio>" } } } }) ===
+      "#include <cstdio>"
+  );
+  check(
+    "源码在 judgeResponseContents 里",
+    submitMod.extractProgram({
+      data: {
+        submission: {
+          judgeResponseContents: [{ programmingJudgeResponseContent: { program: "print(1)" } }]
+        }
+      }
+    }) === "print(1)"
+  );
+  check(
+    "没有源码时返回空串（不静默写空文件）",
+    submitMod.extractProgram({ data: { submission: { status: "ACCEPTED" } } }) === "" &&
+      submitMod.extractProgram(null) === ""
+  );
+  check(
+    "空白源码也算没有",
+    submitMod.extractProgram({ data: { submission: { program: "   \n  " } } }) === ""
+  );
+
+  // 命令与菜单都注册上了
+  const pkg = JSON.parse(fs.readFileSync(path.join(__dirname, "..", "package.json"), "utf8"));
+  check(
+    "命令已注册",
+    pkg.contributes.commands.some((item) => item.command === "pta.pullSubmission")
+  );
+  check(
+    "命令面板可见",
+    pkg.contributes.menus.commandPalette.some(
+      (item) => item.command === "pta.pullSubmission" && item.when === "true"
+    )
+  );
+  check(
+    "题目节点右键也有",
+    pkg.contributes.menus["view/item/context"].some(
+      (item) => item.command === "pta.pullSubmission" && /pta\.problem/.test(item.when)
+    )
+  );
+  check(
+    "命令处理函数已接上",
+    /register\("pta\.pullSubmission", commandPullSubmission\)/.test(
+      fs.readFileSync(path.join(__dirname, "..", "extension.js"), "utf8")
+    )
+  );
+  check(
+    "原有的「查看提交记录」复用同一个取数函数（不再各写一套分页）",
+    /async function commandShowSubmissions[\s\S]{0,1200}collectMySubmissions\(target, cookie/.test(
+      fs.readFileSync(path.join(__dirname, "..", "extension.js"), "utf8")
+    )
+  );
+
   console.log(`\n${failed === 0 ? "全部通过。" : `${failed} 项失败。`}`);
   console.log(`（临时目录保留在 ${root}，可自行删除）`);
   if (failed) {

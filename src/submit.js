@@ -286,6 +286,41 @@ function shortStatusLine(result, options) {
   return `${statusText(submission.status)}${score}`;
 }
 
+/**
+ * 从提交详情里抠出源码。
+ *
+ * 直接在网站上写的代码，本地是没有的 —— 要靠 `/api/submissions/<id>` 把那次提交的
+ * 源码取回来。不同题型 / 不同版本把代码放在不同位置，这里按可能性依次找；
+ * 都找不到就返回空串，让调用方去提示，别静默当成空代码写盘。
+ */
+function extractProgram(result) {
+  const data = (result && result.data) || {};
+  const submission = data.submission || {};
+  const candidates = [
+    submission.program,
+    submission.code,
+    submission.sourceCode,
+    submission.programmingSubmissionDetail && submission.programmingSubmissionDetail.program,
+    submission.codeCompletionSubmissionDetail && submission.codeCompletionSubmissionDetail.program,
+    data.program
+  ];
+  for (const candidate of candidates) {
+    if (typeof candidate === "string" && candidate.trim()) {
+      return candidate;
+    }
+  }
+
+  const contents = submission.judgeResponseContents || data.judgeResponseContents || [];
+  for (const content of contents) {
+    const programming =
+      content && (content.programmingJudgeResponseContent || content.codeCompletionJudgeResponseContent);
+    if (programming && typeof programming.program === "string" && programming.program.trim()) {
+      return programming.program;
+    }
+  }
+  return "";
+}
+
 module.exports = {
   POLL_INTERVAL_MS,
   POLL_TIMEOUT_MS,
@@ -294,6 +329,7 @@ module.exports = {
   buildReport,
   shortStatusLine,
   statusText,
+  extractProgram,
   formatTime,
   formatMemory,
   formatScore,

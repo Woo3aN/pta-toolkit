@@ -2,7 +2,7 @@
 
 [![VS Code](https://img.shields.io/badge/VS%20Code-%5E1.88.0-007ACC?logo=visualstudiocode&logoColor=white)](https://code.visualstudio.com/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
-[![Version](https://img.shields.io/badge/version-0.3.0-blue.svg)](CHANGELOG.md)
+[![Version](https://img.shields.io/badge/version-0.4.0-blue.svg)](CHANGELOG.md)
 [![Dependencies](https://img.shields.io/badge/dependencies-0-brightgreen.svg)](#实现说明)
 
 > 把拼题A（PTA / pintia.cn）的题目拉进 VS Code：**每题一个文件夹**，
@@ -42,7 +42,7 @@
 ## 安装
 
 ```bash
-code --install-extension pta-toolkit-0.3.0.vsix
+code --install-extension pta-toolkit-0.4.0.vsix
 ```
 
 也可以在 VS Code 扩展面板右上角 `...` → 从 VSIX 安装。
@@ -146,6 +146,7 @@ code --install-extension pta-toolkit-0.3.0.vsix
 | `PTA: 在线测试当前文件` | 用自定义数据在 PTA 上跑一次，不计分 |
 | `PTA: 查看这道题的最近一次提交` | 最近一次提交的状态 / 得分 / 耗时 / 内存 |
 | `PTA: 查看这道题的提交记录` | 时间倒序列出这道题的提交记录，选一条看详情 |
+| `PTA: 拉取我在 PTA 上的提交代码` | 把网站上提交过的代码取回本地（本地没写过也行） |
 | `PTA: 刷新题集的做题状态` | 一次请求更新整个题集的状态并重建索引 |
 
 **检索与收藏**
@@ -328,7 +329,13 @@ PTA 不为这类题集创建考试容器，因此无法提交。导出题面与�
 有。`PTA: 查看这道题的提交记录` 会按时间倒序列出这道题最近的若干条提交
 （状态 / 得分 / 耗时 / 内存 / 编译器），选一条看详情。
 
-接口是 `GET /api/problem-sets/{psID}/submissions`，游标分页（`before` + `hasBefore`）。
+**直接在网站上写过，本地没有代码，能拉回来吗？**
+能。`PTA: 拉取我在 PTA 上的提交代码`（侧边栏题目右键也有）：列出这道题你的提交 →
+选一条 → 取那次提交的源码写到本地。最近一次「答案正确」的会标出来。
+本地还没这道题时会先把题面 / 样例 / 模板建好；本地已有你自己写的代码时会先问覆盖还是另存。
+
+接口是 `GET /api/problem-sets/{psID}/submissions`，游标分页（`before` + `hasBefore`）；
+单条提交的源码来自 `GET /api/submissions/{id}`。
 两个已实测的坑：PTA 会**忽略按题过滤的参数**，所以「某道题的记录」是取回整个题集的记录后在本地筛；
 这个接口里 **`time` 单位是秒、`memory` 单位是字节**（题目里的 `timeLimit` / `memoryLimit` 才是 ms / KB）。
 
@@ -383,13 +390,13 @@ PTA 随时可能改接口。所有端点都集中在 `src/ptaApi.js`，真出问
 # 调试：VS Code 打开本目录，按 F5（无需编译）
 # 打包并安装
 python tools/build-vsix.py
-code --install-extension pta-toolkit-0.3.0.vsix --force
+code --install-extension pta-toolkit-0.4.0.vsix --force
 ```
 
 测试：
 
 ```bash
-node test/offline.js             # 离线 375 项：目录命名、不覆盖规则、笔记同步、编译器命令、
+node test/offline.js             # 离线 385 项：目录命名、不覆盖规则、笔记同步、编译器命令、
                                  #   真跑样例、二维码、Set-Cookie、收藏夹、做题状态、侧边栏节点、
                                  #   提交报告、Markdown 渲染、预览面板 HTML、tasks.json 合并、
                                  #   题集「已截止」文案、面板↔根目录的递归回归、公式行内渲染、

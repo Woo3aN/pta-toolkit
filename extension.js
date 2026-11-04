@@ -14,6 +14,7 @@ const submit = require("./src/submit");
 const submissions = require("./src/submissions");
 const templates = require("./src/templates");
 const taskFile = require("./src/taskFile");
+const compilers = require("./src/compilers");
 const { PtaCodeLensProvider } = require("./src/codeLens");
 const { WechatLoginPanel } = require("./src/loginPanel");
 const { ProblemPanel, buildPanelHtml, renderPanelSkeleton } = require("./src/problemPanel");
@@ -325,7 +326,7 @@ async function buildOneProblem(options) {
     problemSetId: opts.problemSetId,
     problemSetName: opts.problemSetName || "",
     problem: detail,
-    language: settings.language,
+    language: opts.language || settings.language,
     fileNameFormat: settings.fileNameFormat,
     templateDir: settings.templateDir,
     autoCreateSource: settings.autoCreateSource,
@@ -1656,6 +1657,41 @@ async function openProblemRef(root, ref) {
 }
 
 /** 查提交记录：既能对当前打开的文件用，也能从侧边栏节点右键用 */
+/** 取「这道题 + 我的」提交记录。PTA 会忽略按题过滤的参数，只能取回来自己筛。 */
+async function collectMySubmissions(target, cookie, options) {
+  const opts = options || {};
+  const myUserId = (extensionContext.globalState.get(STATE_USER) || {}).id;
+  const WANT = 30;
+  const MAX_PAGES = 6;
+  const collected = [];
+
+  let before = "";
+  for (let page = 0; page < MAX_PAGES; page += 1) {
+    if (opts.token && opts.token.isCancellationRequested) {
+      break;
+    }
+    const result = await api.getSubmissions(target.problemSetId, cookie, { limit: 100, before });
+    const list = result.submissions || [];
+    if (!list.length) {
+      break;
+    }
+    collected.push(...submissions.filterSubmissions(list, { problemId: target.problemId, userId: myUserId }));
+    if (opts.onProgress) {
+      opts.onProgress(collected.length, page + 1);
+    }
+    if (collected.length >= WANT || !result.hasBefore) {
+      break;
+    }
+    before = list[list.length - 1].id;
+    await api.sleep(getSettings().requestInterval);
+  }
+
+  return {
+    list: submissions.sortBySubmitAtDesc(submissions.dedupeById(collected)),
+    myUserId
+  };
+}
+
 async function commandShowSubmissions(argument) {
   const cookie = await getCookie({});
   if (!cookie) {
@@ -1680,41 +1716,24 @@ async function commandShowSubmissions(argument) {
     };
   }
 
-  const myUserId = (extensionContext.globalState.get(STATE_USER) || {}).id;
-  const WANT = 30;
-  const MAX_PAGES = 6;
-  const collected = [];
-
+  let collected;
   try {
-    await vscode.window.withProgress(
+    collected = await vscode.window.withProgress(
       { location: vscode.ProgressLocation.Notification, title: "正在读取提交记录…", cancellable: true },
-      async (progress, token) => {
-        let before = "";
-        for (let page = 0; page < MAX_PAGES && !token.isCancellationRequested; page += 1) {
-          const result = await api.getSubmissions(target.problemSetId, cookie, { limit: 100, before });
-          const list = result.submissions || [];
-          if (!list.length) {
-            break;
-          }
-          // PTA 会忽略按题过滤的参数，只能取回来自己筛
-          collected.push(
-            ...submissions.filterSubmissions(list, { problemId: target.problemId, userId: myUserId })
-          );
-          progress.report({ message: `已找到 ${collected.length} 条（第 ${page + 1} 页）` });
-          if (collected.length >= WANT || !result.hasBefore) {
-            break;
-          }
-          before = list[list.length - 1].id;
-          await api.sleep(getSettings().requestInterval);
-        }
-      }
+      async (progress, token) =>
+        collectMySubmissions(target, cookie, {
+          token,
+          onProgress: (count, page) => progress.report({ message: `已找到 ${count} 条（第 ${page} 页）` })
+        })
     );
   } catch (error) {
     await handleError(error, "读取提交记录失败");
     return;
   }
 
-  const mine = submissions.sortBySubmitAtDesc(submissions.dedupeById(collected));
+  const mine = collected.list;
+  const myUserId = collected.myUserId;
+
   if (!mine.length) {
     vscode.window.showInformationMessage(
       `没有找到「${target.label || ""} ${target.title || ""}」的提交记录${
@@ -1754,6 +1773,225 @@ async function commandShowSubmissions(argument) {
   if (action === "查看详情") {
     outputChannel.show();
   }
+}
+
+/** 「空模板」判定：内容和内置模板一致（忽略行尾空白）就当本地还没动过。 */
+function looksLikeTemplate(metadata, text) {
+  const language = (metadata && metadata.language) || "C++";
+  const builtin = templates.BUILTIN_TEMPLATES[language] || "";
+  const normalize = (value) =>
+    String(value || "")
+      .replace(/\r\n?/g, "\n")
+      .replace(/[ \t]+$/gm, "")
+      .trimEnd();
+  const plain = normalize(text);
+  if (!plain) {
+    return true;
+  }
+  if (plain === normalize(builtin)) {
+    return true;
+  }
+  // 旧版模板还会带一个空的 @pintia note 块
+  try {
+    return plain === normalize(notes.ensureNoteBlock(language, builtin));
+  } catch (_error) {
+    return false;
+  }
+}
+
+/**
+ * 把拉回来的代码落到本地。
+ * 本地还没有这道题时，先把题面 / 样例 / 模板建出来，再写代码。
+ */
+async function writePulledProgram(target, submission, program) {
+  const settings = getSettings();
+  const root = settings.workspaceRoot || (await peekRoot({ skipPanel: true })) || "";
+  if (!root) {
+    const pick = await vscode.window.showWarningMessage("还没选择题解目录，代码没地方放。", "现在选择");
+    if (pick === "现在选择") {
+      await commandChooseWorkspaceRoot();
+    }
+    return;
+  }
+
+  // 提交记录里的 compiler 能反推语言（GXX → C++），
+  // 本地还没有这道题时就按这个语言建模板，免得建出个 main.cpp 装 Python。
+  const spec = compilers.PTA_COMPILERS[String(submission.compiler || "").toUpperCase()];
+  const submittedLanguage = spec ? spec.language : "";
+
+  let local = await findLocalProblem(root, target.problemSetId, target.problemId);
+  if (!local) {
+    const pick = await vscode.window.showInformationMessage(
+      `本地还没有「${target.label || ""} ${target.title || ""}」，先把它拉到本地再写入代码？`,
+      "拉取并写入"
+    );
+    if (pick !== "拉取并写入") {
+      return;
+    }
+    try {
+      const created = await vscode.window.withProgress(
+        { location: vscode.ProgressLocation.Notification, title: "正在拉取题目…" },
+        async () =>
+          buildOneProblem({
+            workspaceRoot: root,
+            problemSetId: target.problemSetId,
+            problemId: target.problemId,
+            problemSetName: target.problemSetName,
+            language: submittedLanguage || undefined,
+            cookie: (await extensionContext.secrets.get(SECRET_COOKIE)) || ""
+          })
+      );
+      local = { problemDir: created.problemDir, metadata: created.metadata };
+    } catch (error) {
+      await handleError(error, "拉取题目失败");
+      return;
+    }
+  }
+
+  const metadata = local.metadata || {};
+  const language = metadata.language || submittedLanguage || settings.language;
+  const sourceName = metadata.sourceFile || templates.sourceFileName(language);
+  const sourcePath = path.join(local.problemDir, sourceName);
+  const existed = fs.existsSync(sourcePath);
+  const currentText = existed ? fs.readFileSync(sourcePath, "utf8") : "";
+  const normalize = (value) => String(value || "").replace(/\r\n?/g, "\n").trimEnd();
+  const incoming = normalize(program);
+
+  if (existed && normalize(currentText) === incoming) {
+    vscode.window.showInformationMessage("本地这份代码和该次提交完全一致，不用再拉。");
+    await vscode.window.showTextDocument(vscode.Uri.file(sourcePath));
+    return;
+  }
+
+  let writePath = sourcePath;
+  // 本地已经有他写的东西时才问，空模板就直接写
+  if (existed && currentText.trim() && !looksLikeTemplate(metadata, currentText)) {
+    const ext = path.extname(sourceName);
+    const altName = `${sourceName.slice(0, sourceName.length - ext.length)}-提交${submission.id}${ext}`;
+    const pick = await vscode.window.showWarningMessage(
+      `本地 ${sourceName} 已有内容，这次提交要写到哪里？`,
+      "覆盖本地",
+      `另存为 ${altName}`,
+      "取消"
+    );
+    if (!pick || pick === "取消") {
+      return;
+    }
+    if (pick !== "覆盖本地") {
+      writePath = path.join(local.problemDir, altName);
+    }
+  }
+
+  await fs.promises.writeFile(writePath, `${incoming}\n`, "utf8");
+  log(
+    `已把提交 ${submission.id}（${api.submissionStatusText(submission.status)}，${submit.formatSubmitAt(
+      submission.submitAt
+    )}）的代码写到 ${writePath}`
+  );
+  const document = await vscode.workspace.openTextDocument(writePath);
+  await vscode.window.showTextDocument(document);
+  vscode.window.showInformationMessage(
+    `已拉取「${api.submissionStatusText(submission.status)}」的提交代码 → ${path.basename(writePath)}`
+  );
+}
+
+/**
+ * 命令：把我在 PTA 上的提交代码拉回本地。
+ *
+ * 用在「直接在网站上写/交过，本地没写过」的场景：
+ * 拉这道题我的提交记录 → 选一条 → 取那次提交的源码 → 落到本地。
+ */
+async function commandPullSubmission(argument) {
+  const cookie = await getCookie({});
+  if (!cookie) {
+    return;
+  }
+  const ref = toProblemRef(argument);
+  const current = ref ? null : await requireCurrentProblem();
+  if (!ref && !current) {
+    return;
+  }
+  const metadata = (current && current.metadata) || {};
+  const target = {
+    problemSetId: String(ref ? ref.problemSetId : metadata.problemSetId),
+    problemSetName: (ref && ref.problemSetName) || metadata.problemSetName || "",
+    problemId: String(ref ? ref.problemId : metadata.problemId),
+    label: (ref && ref.label) || metadata.label || "",
+    title: (ref && ref.title) || metadata.title || ""
+  };
+
+  let collected;
+  try {
+    collected = await vscode.window.withProgress(
+      { location: vscode.ProgressLocation.Notification, title: "正在读取提交记录…", cancellable: true },
+      async (progress, token) =>
+        collectMySubmissions(target, cookie, {
+          token,
+          onProgress: (count, page) => progress.report({ message: `已找到 ${count} 条（第 ${page} 页）` })
+        })
+    );
+  } catch (error) {
+    await handleError(error, "读取提交记录失败");
+    return;
+  }
+
+  const mine = collected.list;
+  if (!mine.length) {
+    vscode.window.showInformationMessage(
+      `没有找到「${target.label || ""} ${target.title || ""}」的提交记录${
+        collected.myUserId ? "" : "（本地没有记录用户 ID，无法确认哪些是你自己的提交）"
+      }。`
+    );
+    return;
+  }
+
+  // 最近一次「答案正确」的标出来 —— 多半想拉的就是这份
+  const firstAccepted = mine.find((item) => api.isAccepted(item.status));
+  const items = mine.map((item) => {
+    const described = submissions.describeSubmission(item);
+    const isFirstAccepted = Boolean(firstAccepted && firstAccepted.id === item.id);
+    return Object.assign({ value: item }, described, {
+      label: `${isFirstAccepted ? "$(pass-filled) " : ""}${described.label}`,
+      description: [described.description, isFirstAccepted ? "最近 AC" : ""].filter(Boolean).join(" · ")
+    });
+  });
+
+  const picked = await vscode.window.showQuickPick(items, {
+    placeHolder: `把哪次提交的代码拉到本地？（${target.label || ""} ${target.title || ""}，最近 ${mine.length} 条）`,
+    matchOnDescription: true,
+    matchOnDetail: true
+  });
+  if (!picked) {
+    return;
+  }
+
+  const submission = picked.value;
+  let result;
+  try {
+    result = await vscode.window.withProgress(
+      { location: vscode.ProgressLocation.Notification, title: "正在读取提交代码…" },
+      async () => api.getSubmissionResult(submission.id, cookie)
+    );
+  } catch (error) {
+    await handleError(error, "读取提交代码失败");
+    return;
+  }
+
+  const program = submit.extractProgram(result);
+  if (!program.trim()) {
+    const keys = Object.keys((result && result.data && result.data.submission) || {}).join(", ");
+    log(`提交 ${submission.id} 里没找到源码字段。submission 的字段：${keys || "(空)"}`);
+    const action = await vscode.window.showWarningMessage(
+      "PTA 没有返回这次提交的源码（题型不支持或权限限制）。",
+      "查看输出"
+    );
+    if (action === "查看输出") {
+      outputChannel.show();
+    }
+    return;
+  }
+
+  await writePulledProgram(target, submission, program);
 }
 
 /** 收藏 / 取消收藏（当前文件） */
@@ -2574,6 +2812,7 @@ function activate(context) {
   register("pta.testCurrent", commandTestCurrent);
   register("pta.showLastSubmission", commandShowLastSubmission);
   register("pta.showSubmissions", commandShowSubmissions);
+  register("pta.pullSubmission", commandPullSubmission);
   register("pta.syncNotes", commandSyncNotes);
   register("pta.switchLanguage", commandSwitchLanguage);
   register("pta.openStatement", commandOpenStatement);
