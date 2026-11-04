@@ -396,7 +396,7 @@ code --install-extension pta-toolkit-0.4.0.vsix --force
 测试：
 
 ```bash
-node test/offline.js             # 离线 385 项：目录命名、不覆盖规则、笔记同步、编译器命令、
+node test/offline.js             # 离线 391 项：目录命名、不覆盖规则、笔记同步、编译器命令、
                                  #   真跑样例、二维码、Set-Cookie、收藏夹、做题状态、侧边栏节点、
                                  #   提交报告、Markdown 渲染、预览面板 HTML、tasks.json 合并、
                                  #   题集「已截止」文案、面板↔根目录的递归回归、公式行内渲染、
